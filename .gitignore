@@ -41,3 +41,11 @@ discord-signals.json
 
 # Claude Code runtime lock
 .claude/scheduled_tasks.lock
+
+coverage/
+openspec/
+.cursor/
+.claude/
+.cursorrules
+.mcp.json
+AGENTS.md
