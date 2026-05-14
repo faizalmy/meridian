@@ -172,9 +172,11 @@ export async function agentLoop(goal, maxSteps = config.llm.maxSteps, sessionHis
 
   // Track write tools fired this session — prevent the model from calling the same
   // destructive tool twice (e.g. deploy twice, swap twice after auto-swap)
-  const ONCE_PER_SESSION = new Set(["deploy_position", "swap_token", "close_position"]);
-  // These lock after first attempt regardless of success — retrying them is always wrong
-  const NO_RETRY_TOOLS = new Set(["deploy_position"]);
+  const ONCE_PER_SESSION = new Set(["swap_token", "close_position"]);
+  // Deploy uses a separate attempt counter — safety-blocked attempts allow retry
+  // with a different pool, but we cap total attempts to prevent infinite loops
+  const MAX_DEPLOY_ATTEMPTS = 3;
+  let deployAttempts = 0;
   const firedOnce = new Set();
   const mustUseRealTool = shouldRequireRealToolUse(goal, agentType, interactive);
   let sawToolCall = false;
@@ -355,6 +357,40 @@ export async function agentLoop(goal, maxSteps = config.llm.maxSteps, sessionHis
           };
         }
 
+        // Block deploy after success — already executed on-chain this session
+        if (functionName === "deploy_position" && firedOnce.has(functionName)) {
+          log("agent", `Blocked deploy_position — already executed this session`);
+          await onToolFinish?.({
+            name: functionName,
+            args: functionArgs,
+            result: { blocked: true, reason: `deploy_position already executed this session. Do not deploy again.` },
+            success: false,
+            step,
+          });
+          return {
+            role: "tool",
+            tool_call_id: toolCall.id,
+            content: JSON.stringify({ blocked: true, reason: `deploy_position already executed this session. Do not deploy again.` }),
+          };
+        }
+
+        // Block deploy after max attempts — prevents infinite deploy loops
+        if (functionName === "deploy_position" && deployAttempts >= MAX_DEPLOY_ATTEMPTS) {
+          log("agent", `Blocked deploy_position — max ${MAX_DEPLOY_ATTEMPTS} attempts per session reached`);
+          await onToolFinish?.({
+            name: functionName,
+            args: functionArgs,
+            result: { blocked: true, reason: `Max deploy attempts (${MAX_DEPLOY_ATTEMPTS}) reached this session. No more deploys possible. Report results and stop.` },
+            success: false,
+            step,
+          });
+          return {
+            role: "tool",
+            tool_call_id: toolCall.id,
+            content: JSON.stringify({ blocked: true, reason: `Max deploy attempts (${MAX_DEPLOY_ATTEMPTS}) reached this session. No more deploys possible. Report results and stop.` }),
+          };
+        }
+
         await onToolStart?.({ name: functionName, args: functionArgs, step });
         const result = await executeTool(functionName, functionArgs);
         await onToolFinish?.({
@@ -365,10 +401,19 @@ export async function agentLoop(goal, maxSteps = config.llm.maxSteps, sessionHis
           step,
         });
 
-        // Lock deploy_position after first attempt regardless of outcome — retrying is never right
-        // For close/swap: only lock on success so genuine failures can be retried
-        if (NO_RETRY_TOOLS.has(functionName)) firedOnce.add(functionName);
-        else if (ONCE_PER_SESSION.has(functionName) && result.success === true) firedOnce.add(functionName);
+        // Deploy: count attempts, only lock if NOT safety-blocked (allow different pool retry)
+        if (functionName === "deploy_position") {
+          deployAttempts++;
+          if (result?.blocked) {
+            log("agent", `Deploy attempt ${deployAttempts}/${MAX_DEPLOY_ATTEMPTS} blocked — may retry with different pool`);
+          } else {
+            // Actual execution or success — lock deploy for this session
+            firedOnce.add(functionName);
+          }
+        } else if (ONCE_PER_SESSION.has(functionName) && result.success === true) {
+          // Close/swap: only lock on success so genuine failures can be retried
+          firedOnce.add(functionName);
+        }
 
         return {
           role: "tool",
