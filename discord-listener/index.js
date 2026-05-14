@@ -32,13 +32,14 @@ const SOL_ADDR_RE = /[1-9A-HJ-NP-Za-km-z]{32,44}/g;
 // Known non-address patterns to skip (short common words that match base58 range)
 const FALSE_POSITIVE_SKIP = new Set([
   "solana", "meteora", "jupiter", "raydium", "orca",
+  "So11111111111111111111111111111111111111112",  // wrapped SOL
+  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  // USDC
+  "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  // USDT
 ]);
 
 function isLikelySolanaAddress(str) {
   if (str.length < 32 || str.length > 44) return false;
   if (FALSE_POSITIVE_SKIP.has(str.toLowerCase())) return false;
-  // Must contain digits (pure alpha strings are usually words)
-  if (!/\d/.test(str)) return false;
   return true;
 }
 
@@ -124,8 +125,9 @@ client.on("messageCreate", async (message) => {
   if (!CHANNEL_IDS.includes(message.channelId)) return;
   // Skip own messages
   if (message.author?.id === client.user?.id) return;
-  // Only process messages from Metlex Pool Bot
-  if (message.author?.username !== "Metlex Pool Bot") return;
+  // Process messages from Metlex DLMM or Metlex Pool Bot
+  const botNames = ["Metlex DLMM", "Metlex Pool Bot"];
+  if (!botNames.includes(message.author?.username)) return;
 
   const content = message.content || "";
   const embeds = message.embeds?.map(e => `${e.title || ""} ${e.description || ""}`).join(" ") || "";
