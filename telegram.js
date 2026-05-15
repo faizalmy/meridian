@@ -22,6 +22,44 @@ let _liveMessageDepth = 0;
 let _warnedMissingChatId = false;
 let _warnedMissingAllowedUsers = false;
 
+// ─── Outgoing notification queue ────────────────────────────────
+// Notifications generated during a live-message cycle are queued
+// and flushed after the cycle finishes, preventing silent drops.
+const _outgoingQueue = [];
+
+/**
+ * Enqueue an async notification function.  If no live message is
+ * active the notification fires immediately; otherwise it is
+ * buffered until drainOutgoingQueue() is called (typically right
+ * after liveMessage.finalize() in the management / screening
+ * cycle finally blocks).
+ */
+export function enqueueNotification(fn) {
+  if (!hasActiveLiveMessage()) {
+    // Fast path — no live message, send now
+    fn().catch((e) => log("telegram_warn", `Notification failed: ${e.message}`));
+    return;
+  }
+  _outgoingQueue.push(fn);
+}
+
+/**
+ * Flush queued notifications.  Safe to call at any time — will
+ * only drain while no live message is active.  Called from the
+ * finally blocks of runManagementCycle / runScreeningCycle and
+ * from the liveMessage.finalize() path.
+ */
+export async function drainOutgoingQueue() {
+  while (_outgoingQueue.length > 0 && !hasActiveLiveMessage()) {
+    const fn = _outgoingQueue.shift();
+    try {
+      await fn();
+    } catch (e) {
+      log("telegram_warn", `Queued notification failed: ${e.message}`);
+    }
+  }
+}
+
 // ─── chatId persistence ──────────────────────────────────────────
 function loadChatId() {
   try {
@@ -399,54 +437,63 @@ export function stopPolling() {
 }
 
 // ─── Notification helpers ────────────────────────────────────────
-export async function notifyDeploy({ pair, amountSol, position, tx, priceRange, rangeCoverage, binStep, baseFee }) {
-  if (hasActiveLiveMessage()) return;
-  const priceStr = priceRange
-    ? `Price range: ${priceRange.min < 0.0001 ? priceRange.min.toExponential(3) : priceRange.min.toFixed(6)} – ${priceRange.max < 0.0001 ? priceRange.max.toExponential(3) : priceRange.max.toFixed(6)}\n`
-    : "";
-  const coverageStr = rangeCoverage
-    ? `Range cover: ${fmtPct(rangeCoverage.downside_pct)} downside | ${fmtPct(rangeCoverage.upside_pct)} upside | ${fmtPct(rangeCoverage.width_pct)} total\n`
-    : "";
-  const poolStr = (binStep || baseFee)
-    ? `Bin step: ${binStep ?? "?"}  |  Base fee: ${baseFee != null ? baseFee + "%" : "?"}\n`
-    : "";
-  await sendHTML(
-    `✅ <b>Deployed</b> ${pair}\n` +
-    `Amount: ${amountSol} SOL\n` +
-    priceStr +
-    coverageStr +
-    poolStr +
-    `Position: <code>${position?.slice(0, 8)}...</code>\n` +
-    `Tx: <code>${tx?.slice(0, 16)}...</code>`
-  );
+// All notifications go through enqueueNotification() so they are
+// buffered during live-message cycles and flushed afterwards.
+// This prevents silent drops when the agent closes a position
+// while the live message is still being edited.
+
+export function notifyDeploy({ pair, amountSol, position, tx, priceRange, rangeCoverage, binStep, baseFee }) {
+  enqueueNotification(async () => {
+    const priceStr = priceRange
+      ? `Price range: ${priceRange.min < 0.0001 ? priceRange.min.toExponential(3) : priceRange.min.toFixed(6)} – ${priceRange.max < 0.0001 ? priceRange.max.toExponential(3) : priceRange.max.toFixed(6)}\n`
+      : "";
+    const coverageStr = rangeCoverage
+      ? `Range cover: ${fmtPct(rangeCoverage.downside_pct)} downside | ${fmtPct(rangeCoverage.upside_pct)} upside | ${fmtPct(rangeCoverage.width_pct)} total\n`
+      : "";
+    const poolStr = (binStep || baseFee)
+      ? `Bin step: ${binStep ?? "?"}  |  Base fee: ${baseFee != null ? baseFee + "%" : "?"}\n`
+      : "";
+    await sendHTML(
+      `✅ <b>Deployed</b> ${pair}\n` +
+      `Amount: ${amountSol} SOL\n` +
+      priceStr +
+      coverageStr +
+      poolStr +
+      `Position: <code>${position?.slice(0, 8)}...</code>\n` +
+      `Tx: <code>${tx?.slice(0, 16)}...</code>`
+    );
+  });
 }
 
-export async function notifyClose({ pair, pnlUsd, pnlPct, reason }) {
-  if (hasActiveLiveMessage()) return;
-  const sign = pnlUsd >= 0 ? "+" : "";
-  const reasonLine = reason ? `Reason: ${reason}\n` : "";
-  await sendHTML(
-    `🔒 <b>Closed</b> ${pair}\n` +
-    `PnL: ${sign}$${(pnlUsd ?? 0).toFixed(2)} (${sign}${(pnlPct ?? 0).toFixed(2)}%)\n` +
-    reasonLine
-  );
+export function notifyClose({ pair, pnlUsd, pnlPct, reason }) {
+  enqueueNotification(async () => {
+    const sign = pnlUsd >= 0 ? "+" : "";
+    const reasonLine = reason ? `Reason: ${reason}\n` : "";
+    await sendHTML(
+      `🔒 <b>Closed</b> ${pair}\n` +
+      `PnL: ${sign}$${(pnlUsd ?? 0).toFixed(2)} (${sign}${(pnlPct ?? 0).toFixed(2)}%)\n` +
+      reasonLine
+    );
+  });
 }
 
-export async function notifySwap({ inputSymbol, outputSymbol, amountIn, amountOut, tx }) {
-  if (hasActiveLiveMessage()) return;
-  await sendHTML(
-    `🔄 <b>Swapped</b> ${inputSymbol} → ${outputSymbol}\n` +
-    `In: ${amountIn ?? "?"} | Out: ${amountOut ?? "?"}\n` +
-    `Tx: <code>${tx?.slice(0, 16)}...</code>`
-  );
+export function notifySwap({ inputSymbol, outputSymbol, amountIn, amountOut, tx }) {
+  enqueueNotification(async () => {
+    await sendHTML(
+      `🔄 <b>Swapped</b> ${inputSymbol} → ${outputSymbol}\n` +
+      `In: ${amountIn ?? "?"} | Out: ${amountOut ?? "?"}\n` +
+      `Tx: <code>${tx?.slice(0, 16)}...</code>`
+    );
+  });
 }
 
-export async function notifyOutOfRange({ pair, minutesOOR }) {
-  if (hasActiveLiveMessage()) return;
-  await sendHTML(
-    `⚠️ <b>Out of Range</b> ${pair}\n` +
-    `Been OOR for ${minutesOOR} minutes`
-  );
+export function notifyOutOfRange({ pair, minutesOOR }) {
+  enqueueNotification(async () => {
+    await sendHTML(
+      `⚠️ <b>Out of Range</b> ${pair}\n` +
+      `Been OOR for ${minutesOOR} minutes`
+    );
+  });
 }
 
 function sleep(ms) {

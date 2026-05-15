@@ -23,6 +23,7 @@ import {
   notifyOutOfRange,
   isEnabled as telegramEnabled,
   createLiveMessage,
+  drainOutgoingQueue,
 } from "./telegram.js";
 import { generateBriefing } from "./briefing.js";
 import { getLastBriefingDate, setLastBriefingDate, getTrackedPosition, setPositionInstruction, updatePnlAndCheckExits, queuePeakConfirmation, resolvePendingPeak, queueTrailingDropConfirmation, resolvePendingTrailingDrop } from "./state.js";
@@ -409,6 +410,9 @@ After executing, write a brief one-line result per position.
           notifyOutOfRange({ pair: p.pair, minutesOOR: p.minutes_out_of_range }).catch(() => { });
         }
       }
+      // Flush any notifications queued during the live-message cycle
+      // (close, deploy, swap notifications that were buffered)
+      await drainOutgoingQueue().catch(() => {});
     }
   }
   return mgmtReport;
@@ -756,6 +760,8 @@ IMPORTANT:
         if (liveMessage) await liveMessage.finalize(stripThink(screenReport)).catch(() => {});
         else sendMessage(`🔍 Screening Cycle\n\n${stripThink(screenReport)}`).catch(() => { });
       }
+      // Flush any notifications queued during the live-message cycle
+      await drainOutgoingQueue().catch(() => {});
     }
   }
   return screenReport;
@@ -1697,6 +1703,7 @@ async function telegramHandler(msg) {
   } finally {
     busy = false;
     refreshPrompt();
+    drainOutgoingQueue().catch(() => {});
     drainTelegramQueue().catch(() => {});
   }
 }
