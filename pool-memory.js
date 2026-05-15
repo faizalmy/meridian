@@ -219,8 +219,10 @@ export function isPoolOnCooldown(poolAddress) {
   if (!poolAddress) return false;
   const db = load();
   const entry = db[poolAddress];
-  if (!entry?.cooldown_until) return false;
-  return new Date(entry.cooldown_until) > new Date();
+  const now = new Date();
+  if (entry?.cooldown_until && new Date(entry.cooldown_until) > now) return true;
+  if (entry?.rejection_cooldown_until && new Date(entry.rejection_cooldown_until) > now) return true;
+  return false;
 }
 
 export function isBaseMintOnCooldown(baseMint) {
@@ -402,4 +404,57 @@ export function addPoolNote({ pool_address, note }) {
   save(db);
   log("pool-memory", `Note added to ${pool_address.slice(0, 8)}: ${safeNote}`);
   return { saved: true, pool_address, note: safeNote };
+}
+
+/**
+ * Record a screening rejection cooldown for a pool.
+ * Prevents the LLM screener from immediately redeploying into a pool it just rejected.
+ */
+export function recordScreeningRejection(poolAddress, baseMint, reason, cooldownMinutes) {
+  if (!poolAddress) return;
+  const db = load();
+
+  if (!db[poolAddress]) {
+    db[poolAddress] = {
+      name: poolAddress.slice(0, 8),
+      base_mint: null,
+      deploys: [],
+      total_deploys: 0,
+      avg_pnl_pct: 0,
+      win_rate: 0,
+      adjusted_win_rate: 0,
+      adjusted_win_rate_sample_count: 0,
+      last_deployed_at: null,
+      last_outcome: null,
+      notes: [],
+    };
+  }
+
+  const entry = db[poolAddress];
+  entry.rejection_cooldown_until = new Date(Date.now() + cooldownMinutes * 60 * 1000).toISOString();
+  entry.rejection_cooldown_reason = sanitizeStoredNote(reason);
+
+  if (baseMint && !entry.base_mint) {
+    entry.base_mint = baseMint;
+  }
+
+  save(db);
+  log("pool-memory", `Rejection cooldown set for ${entry.name} until ${entry.rejection_cooldown_until} (${reason})`);
+}
+
+/**
+ * Clear rejection cooldown for a pool.
+ * No-op if pool doesn't exist or has no rejection cooldown.
+ */
+export function clearRejectionCooldown(poolAddress) {
+  if (!poolAddress) return;
+  const db = load();
+  const entry = db[poolAddress];
+  if (!entry?.rejection_cooldown_until) return;
+
+  delete entry.rejection_cooldown_until;
+  delete entry.rejection_cooldown_reason;
+
+  save(db);
+  log("pool-memory", `Rejection cooldown cleared for ${entry.name}`);
 }
