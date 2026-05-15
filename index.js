@@ -28,7 +28,7 @@ import { generateBriefing } from "./briefing.js";
 import { getLastBriefingDate, setLastBriefingDate, getTrackedPosition, setPositionInstruction, updatePnlAndCheckExits, queuePeakConfirmation, resolvePendingPeak, queueTrailingDropConfirmation, resolvePendingTrailingDrop } from "./state.js";
 import { getActiveStrategy } from "./strategy-library.js";
 import { bold, buildRangeBar as fmtRangeBar, formatAge, formatPct, formatScreeningReport, parseDecision } from "./telegram-formatter.js";
-import { recordPositionSnapshot, recallForPool, addPoolNote } from "./pool-memory.js";
+import { recordPositionSnapshot, recallForPool, addPoolNote, recordScreeningRejection } from "./pool-memory.js";
 import { checkSmartWalletsOnPool } from "./smart-wallets.js";
 import { getTokenNarrative, getTokenInfo } from "./tools/token.js";
 import { stageSignals } from "./signal-tracker.js";
@@ -684,11 +684,28 @@ Do NOT include:
     });
     
     if (decision.action === 'skip') {
+      // Set rejection cooldown on all presented candidates
+      const cooldownMinutes = config.management.screeningRejectionCooldownMinutes ?? 30;
+      if (typeof cooldownMinutes === 'number' && cooldownMinutes > 0 && Array.isArray(passing)) {
+        for (const { pool } of passing) {
+          if (pool?.pool) {
+            recordScreeningRejection(
+              pool.pool,
+              pool.base?.mint || null,
+              decision.reason || "LLM chose not to deploy",
+              cooldownMinutes,
+            );
+          }
+        }
+        log("screening", `Rejection cooldown (${cooldownMinutes}m) set on ${passing.length} candidate(s)`);
+      }
+
       appendDecision({
         type: "no_deploy",
         actor: "SCREENER",
         summary: "LLM chose no deploy",
         reason: decision.reason || stripThink(content).slice(0, 500),
+        rejected: Array.isArray(passing) ? passing.map(({ pool }) => `${pool.name || pool.pool?.slice(0, 8)} (${pool.pool?.slice(0, 8)})`) : [],
       });
     } else if (!deploySucceeded) {
       appendDecision({
