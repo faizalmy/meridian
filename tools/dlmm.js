@@ -1394,6 +1394,10 @@ export async function closePosition({ position_address, reason }) {
   }
 
   const tracked = getTrackedPosition(position_address);
+  // Snapshot pre-close position data for PnL fallback — the positions cache
+  // gets refreshed after close (only open positions), so the closed position
+  // disappears from it before the Meteora closed-API settles.
+  const preClosePos = _positionsCache?.positions?.find(p => p.position === position_address);
 
   try {
     log("close", `Closing position: ${position_address}`);
@@ -1535,6 +1539,21 @@ export async function closePosition({ position_address, reason }) {
           }
         } catch (e) {
           log("close_warn", `Relay closed PnL fetch failed: ${e.message}`);
+        }
+        // Fallback to pre-close snapshot if closed API had no data
+        if (finalValueUsd === 0 && preClosePos) {
+          pnlUsd        = preClosePos.pnl_true_usd ?? preClosePos.pnl_usd ?? 0;
+          pnlPct        = preClosePos.pnl_pct ?? 0;
+          feesUsd       = (preClosePos.collected_fees_true_usd || 0) + (preClosePos.unclaimed_fees_true_usd || 0);
+          initialUsd    = tracked?.initial_value_usd || 0;
+          if (initialUsd > 0) {
+            finalValueUsd = Math.max(0, initialUsd + pnlUsd - feesUsd);
+            pnlPct = (pnlUsd / initialUsd) * 100;
+          } else {
+            finalValueUsd = preClosePos.total_value_true_usd ?? preClosePos.total_value_usd ?? 0;
+            initialUsd = Math.max(0, finalValueUsd + feesUsd - pnlUsd);
+          }
+          log("close_warn", `Using pre-close snapshot fallback (relay) because closed API has not settled yet`);
         }
 
         await recordPerformance({
@@ -1794,21 +1813,21 @@ export async function closePosition({ position_address, reason }) {
       }
       // Fallback to pre-close cache snapshot if closed API had no data
       if (finalValueUsd === 0) {
-        const cachedPos = _positionsCache?.positions?.find(p => p.position === position_address);
-        if (cachedPos) {
-          pnlUsd        = cachedPos.pnl_true_usd ?? cachedPos.pnl_usd ?? 0;
-          pnlPct        = cachedPos.pnl_pct   ?? 0;
-          feesUsd       = (cachedPos.collected_fees_true_usd || 0) + (cachedPos.unclaimed_fees_true_usd || 0);
+        const fallbackPos = preClosePos;
+        if (fallbackPos) {
+          pnlUsd        = fallbackPos.pnl_true_usd ?? fallbackPos.pnl_usd ?? 0;
+          pnlPct        = fallbackPos.pnl_pct   ?? 0;
+          feesUsd       = (fallbackPos.collected_fees_true_usd || 0) + (fallbackPos.unclaimed_fees_true_usd || 0);
           initialUsd    = tracked.initial_value_usd || 0;
           if (initialUsd > 0) {
             // Keep fallback internally consistent using USD-only cached metrics.
             finalValueUsd = Math.max(0, initialUsd + pnlUsd - feesUsd);
             pnlPct = (pnlUsd / initialUsd) * 100;
           } else {
-            finalValueUsd = cachedPos.total_value_true_usd ?? cachedPos.total_value_usd ?? 0;
+            finalValueUsd = fallbackPos.total_value_true_usd ?? fallbackPos.total_value_usd ?? 0;
             initialUsd = Math.max(0, finalValueUsd + feesUsd - pnlUsd);
           }
-          log("close_warn", `Using cached pnl fallback because closed API has not settled yet`);
+          log("close_warn", `Using pre-close snapshot fallback because closed API has not settled yet`);
         }
       }
 
