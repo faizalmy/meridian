@@ -451,7 +451,7 @@ export function notifyDeploy({ pair, amountSol, position, tx, priceRange, rangeC
     const poolStr = (binStep || baseFee)
       ? `Bin step: ${binStep ?? "?"}  |  Base fee: ${baseFee != null ? baseFee + "%" : "?"}\n`
       : "";
-    await sendHTML(
+    await sendMessage(
       `✅ <b>Deployed</b> ${pair}\n` +
       `Amount: ${amountSol} SOL\n` +
       priceStr +
@@ -467,7 +467,7 @@ export function notifyClose({ pair, pnlUsd, pnlPct, reason }) {
   enqueueNotification(async () => {
     const sign = pnlUsd >= 0 ? "+" : "";
     const reasonLine = reason ? `Reason: ${reason}\n` : "";
-    await sendHTML(
+    await sendMessage(
       `🔒 <b>Closed</b> ${pair}\n` +
       `PnL: ${sign}$${(pnlUsd ?? 0).toFixed(2)} (${sign}${(pnlPct ?? 0).toFixed(2)}%)\n` +
       reasonLine
@@ -477,7 +477,7 @@ export function notifyClose({ pair, pnlUsd, pnlPct, reason }) {
 
 export function notifySwap({ inputSymbol, outputSymbol, amountIn, amountOut, tx }) {
   enqueueNotification(async () => {
-    await sendHTML(
+    await sendMessage(
       `🔄 <b>Swapped</b> ${inputSymbol} → ${outputSymbol}\n` +
       `In: ${amountIn ?? "?"} | Out: ${amountOut ?? "?"}\n` +
       `Tx: <code>${tx?.slice(0, 16)}...</code>`
@@ -487,7 +487,7 @@ export function notifySwap({ inputSymbol, outputSymbol, amountIn, amountOut, tx 
 
 export function notifyOutOfRange({ pair, minutesOOR }) {
   enqueueNotification(async () => {
-    await sendHTML(
+    await sendMessage(
       `⚠️ <b>Out of Range</b> ${pair}\n` +
       `Been OOR for ${minutesOOR} minutes`
     );
