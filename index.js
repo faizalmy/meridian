@@ -16,7 +16,6 @@ import {
   stopPolling,
   sendMessage,
   sendMessageWithButtons,
-  sendHTML,
   editMessage,
   editMessageWithButtons,
   answerCallbackQuery,
@@ -165,7 +164,7 @@ async function runBriefing() {
   try {
     const briefing = await generateBriefing();
     if (telegramEnabled()) {
-      await sendHTML(briefing);
+      await sendMessage(briefing);
     }
     setLastBriefingDate();
   } catch (error) {
@@ -1398,7 +1397,7 @@ async function telegramHandler(msg) {
   if (text === "/briefing") {
     try {
       const briefing = await generateBriefing();
-      await sendHTML(briefing);
+      await sendMessage(briefing);
     } catch (e) {
       await sendMessage(`Error: ${e.message}`).catch(() => {});
     }

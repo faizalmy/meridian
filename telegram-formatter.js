@@ -87,14 +87,19 @@ function formatManagementReport(positions, actionMap, portfolio) {
   const lines = positions.map((p) => {
     const act = actionMap.get(p.position);
     const inRange = p.in_range ? '🟢 IN' : `🔴 OOR ${p.minutes_out_of_range ?? 0}m`;
-    const val = portfolio.solMode ? `◎${p.total_value_usd ?? '?'}` : `$${p.total_value_usd ?? '?'}`;
-    const unclaimed = portfolio.solMode ? `◎${p.unclaimed_fees_usd ?? '?'}` : `$${p.unclaimed_fees_usd ?? '?'}`;
+    const val = portfolio.solMode
+      ? `◎${p.total_value_usd != null ? Number(p.total_value_usd).toFixed(4) : '?'}`
+      : formatUSD(p.total_value_usd);
+    const unclaimed = portfolio.solMode
+      ? `◎${p.unclaimed_fees_usd != null ? Number(p.unclaimed_fees_usd).toFixed(4) : '?'}`
+      : formatUSD(p.unclaimed_fees_usd);
     const statusLabel = act.action === 'INSTRUCTION' ? 'HOLD (instruction)' : act.action;
     const pnlStr = p.pnl_usd != null
-      ? `${p.pnl_usd >= 0 ? '+' : ''}${cur}${p.pnl_usd.toFixed(2)}`
+      ? `${p.pnl_usd >= 0 ? '' : '-'}${cur}${Math.abs(p.pnl_usd).toFixed(2)}`
       : '?';
+    const pnlPctStr = p.pnl_pct != null ? ` (${formatPct(p.pnl_pct)})` : '';
 
-    let line = `${bold(p.pair)} | Age: ${formatAge(p.age_minutes)} | Val: ${val} | Unclaimed: ${unclaimed} | PnL: ${pnlStr} (${p.pnl_pct ?? '?'}%) | Yield: ${p.fee_per_tvl_24h ?? '?'}% | ${inRange} | ${statusLabel}`;
+    let line = `${bold(p.pair)} | Age: ${formatAge(p.age_minutes)} | Val: ${val} | Unclaimed: ${unclaimed} | PnL: ${pnlStr}${pnlPctStr} | Yield: ${formatPct(p.fee_per_tvl_24h)} | ${inRange} | ${statusLabel}`;
 
     const bar = buildRangeBar(p);
     if (bar) line += `\n${bar}`;
@@ -176,7 +181,7 @@ function formatScreeningSkip(candidates, decision, portfolio) {
 // ─── Deploy Notification ───────────────────────────────────────
 
 function formatDeployNotification(data) {
-  const { pair, amountSol, strategy, activeBin, priceRange, rangeCoverage, binStep, baseFee, position, tx } = data;
+  const { pair, amountSol, strategy, activeBin, priceRange, rangeCoverage, binStep, baseFee } = data;
 
   const lines = [
     `${bold('🚀 Deployed')} ${pair}`,
@@ -196,14 +201,6 @@ function formatDeployNotification(data) {
     lines.push(`Bin step: ${binStep ?? '?'} | Base fee: ${baseFee != null ? baseFee + '%' : '?'}`);
   }
 
-  if (position) {
-    lines.push(`Position: ${code(position.slice(0, 8) + '...')}`);
-  }
-
-  if (tx) {
-    lines.push(`Tx: ${code(tx.slice(0, 16) + '...')}`);
-  }
-
   return lines.join('\n');
 }
 
@@ -212,12 +209,15 @@ function formatDeployNotification(data) {
 function formatCloseNotification(data) {
   const { pair, pnlUsd, pnlPct, reason } = data;
 
-  const sign = pnlUsd >= 0 ? '+' : '';
   const reasonLine = reason ? `Reason: ${reason}` : '';
+  const profit = (pnlUsd ?? 0) >= 0;
+  const icon = profit ? '🟢' : '🔴';
+  const pnlStr = `${profit ? '' : '-'}$${Math.abs(pnlUsd ?? 0).toFixed(2)}`;
+  const pctStr = formatPct(pnlPct);
 
   const lines = [
-    `${bold('🔒 Closed')} ${pair}`,
-    `PnL: ${sign}$${(pnlUsd ?? 0).toFixed(2)} (${sign}${(pnlPct ?? 0).toFixed(2)}%)`,
+    `${icon} ${bold('Closed')} ${pair}`,
+    `PnL: ${pnlStr} (${pctStr})`,
   ];
 
   if (reasonLine) lines.push(reasonLine);
