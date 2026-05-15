@@ -465,8 +465,9 @@ export function notifyClose({ pair, pnlUsd, pnlPct, reason }) {
   enqueueNotification(async () => {
     const sign = pnlUsd >= 0 ? "+" : "";
     const reasonLine = reason ? `Reason: ${reason}\n` : "";
+    const icon = pnlPct > 0 ? "🟢" : pnlPct < 0 ? "🔴" : "⚪";
     await sendMessage(
-      `🔒 <b>Closed</b> ${pair}\n` +
+      `${icon} <b>Closed</b> ${pair}\n` +
       `PnL: ${sign}$${(pnlUsd ?? 0).toFixed(2)} (${sign}${(pnlPct ?? 0).toFixed(2)}%)\n` +
       reasonLine
     );

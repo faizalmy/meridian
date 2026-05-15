@@ -10,7 +10,7 @@ import { getWalletBalances } from "./tools/wallet.js";
 import { getTopCandidates } from "./tools/screening.js";
 import { config, reloadScreeningThresholds, computeDeployAmount } from "./config.js";
 import { evolveThresholds, getPerformanceSummary } from "./lessons.js";
-import { executeTool, registerCronRestarter } from "./tools/executor.js";
+import { executeTool, setSuppressNotifications, registerCronRestarter } from "./tools/executor.js";
 import {
   startPolling,
   stopPolling,
@@ -338,6 +338,7 @@ export async function runManagementCycle({ silent = false } = {}) {
         ].filter(Boolean).join("\n");
       }).join("\n\n");
 
+      setSuppressNotifications(true);
       const { content } = await agentLoop(`
 MANAGEMENT ACTION REQUIRED — ${actionPositions.length} position(s)
 
@@ -355,6 +356,7 @@ After executing, write a brief one-line result per position.
         onToolStart: async ({ name }) => { await liveMessage?.toolStart(name); },
         onToolFinish: async ({ name, result, success }) => { await liveMessage?.toolFinish(name, result, success); },
       });
+      setSuppressNotifications(false);
 
       mgmtReport += `\n\n${content}`;
     } else {
@@ -386,6 +388,7 @@ After executing, write a brief one-line result per position.
       }
       // Flush any notifications queued during the live-message cycle
       // (close, deploy, swap notifications that were buffered)
+      setSuppressNotifications(false);
       await drainOutgoingQueue().catch(() => {});
     }
   }

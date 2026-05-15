@@ -45,7 +45,7 @@ describe("notifyClose", () => {
     await notifyClose({ pair: "SOL-USDC", pnlUsd: 1.23, pnlPct: 3.45, reason: "take profit: good return" });
 
     const msg = extractSentMessage();
-    expect(msg).toContain("🔒 <b>Closed</b> SOL-USDC");
+    expect(msg).toContain("🟢 <b>Closed</b> SOL-USDC");
     expect(msg).toContain("PnL: +$1.23 (+3.45%)");
     expect(msg).toContain("Reason: take profit: good return");
     // reason appears after PnL
@@ -59,7 +59,7 @@ describe("notifyClose", () => {
     await notifyClose({ pair: "SOL-USDC", pnlUsd: 1.23, pnlPct: 3.45 });
 
     const msg = extractSentMessage();
-    expect(msg).toContain("🔒 <b>Closed</b> SOL-USDC");
+    expect(msg).toContain("🟢 <b>Closed</b> SOL-USDC");
     expect(msg).toContain("PnL: +$1.23 (+3.45%)");
     expect(msg).not.toContain("Reason:");
   });
