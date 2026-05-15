@@ -148,7 +148,6 @@ function formatScreeningDeploy(candidates, decision, portfolio) {
     `${bold('📊 Market Data')}`,
     `Token age: ${pool.token_age_hours ?? '?'}h | Holders: ${ti?.holders ?? '?'}`,
     `Smart money: ${sw?.in_pool?.length ? `${sw.in_pool.length} wallets present` : 'none'}`,
-    `Composite score: ${pool.composite_score ?? '?'}/10`,
     '',
     `${bold('🛡️ Risk Assessment')}`,
     `${pool.risk_level === 1 ? '🟢' : '🟡'} Risk level: ${pool.risk_level ?? '?'}`,
