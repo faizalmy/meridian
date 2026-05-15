@@ -28,6 +28,7 @@ import {
 import { generateBriefing } from "./briefing.js";
 import { getLastBriefingDate, setLastBriefingDate, getTrackedPosition, setPositionInstruction, updatePnlAndCheckExits, queuePeakConfirmation, resolvePendingPeak, queueTrailingDropConfirmation, resolvePendingTrailingDrop } from "./state.js";
 import { getActiveStrategy } from "./strategy-library.js";
+import { bold, buildRangeBar as fmtRangeBar, formatAge, formatPct, formatScreeningReport, parseDecision } from "./telegram-formatter.js";
 import { recordPositionSnapshot, recallForPool, addPoolNote } from "./pool-memory.js";
 import { checkSmartWalletsOnPool } from "./smart-wallets.js";
 import { getTokenNarrative, getTokenInfo } from "./tools/token.js";
@@ -279,35 +280,9 @@ export async function runManagementCycle({ silent = false } = {}) {
     }
 
     // ── Position range bar helper ───────────────────────────────────
+    // Uses fmtRangeBar from telegram-formatter.js (wrapped in <code> tags)
     function buildRangeBar(p) {
-      if (p.lower_bin == null || p.upper_bin == null || p.active_bin == null) return null;
-      const range = p.upper_bin - p.lower_bin;
-      if (range <= 0) return null;
-
-      const width = 10;
-      const ratio = (p.active_bin - p.lower_bin) / range;
-
-      // Build the visual bar
-      let bar;
-      if (p.in_range) {
-        const filled = Math.max(0, Math.min(width, Math.round(ratio * width)));
-        const empty = width - filled;
-        bar = `[${'▓'.repeat(filled)}${'░'.repeat(empty)}]`;
-      } else if (ratio < 0) {
-        bar = `◀[${'░'.repeat(width)}]`;
-      } else {
-        bar = `[${'▓'.repeat(width)}]▶`;
-      }
-
-      // Range percentage (requires bin_step)
-      if (p.bin_step != null) {
-        const stepMul = 1 + p.bin_step / 10000;
-        const pctToLower = (stepMul ** (p.lower_bin - p.active_bin) - 1) * 100;
-        const pctToUpper = (stepMul ** (p.upper_bin - p.active_bin) - 1) * 100;
-        bar += ` ${pctToLower >= 0 ? "+" : ""}${pctToLower.toFixed(1)}% / ${pctToUpper >= 0 ? "+" : ""}${pctToUpper.toFixed(1)}%`;
-      }
-
-      return bar;
+      return fmtRangeBar(p);
     }
 
     // ── Build JS report ──────────────────────────────────────────────
@@ -324,7 +299,7 @@ export async function runManagementCycle({ silent = false } = {}) {
       const pnlStr = p.pnl_usd != null
         ? `${p.pnl_usd >= 0 ? "+" : ""}${cur}${p.pnl_usd.toFixed(2)}`
         : "?";
-      let line = `**${p.pair}** | Age: ${p.age_minutes ?? "?"}m | Val: ${val} | Unclaimed: ${unclaimed} | PnL: ${pnlStr} (${p.pnl_pct ?? "?"}%) | Yield: ${p.fee_per_tvl_24h ?? "?"}% | ${inRange} | ${statusLabel}`;
+      let line = `${bold(p.pair)} | Age: ${p.age_minutes ?? "?"}m | Val: ${val} | Unclaimed: ${unclaimed} | PnL: ${pnlStr} (${p.pnl_pct ?? "?"}%) | Yield: ${p.fee_per_tvl_24h ?? "?"}% | ${inRange} | ${statusLabel}`;
       const bar = buildRangeBar(p);
       if (bar) line += `\n${bar}`;
       if (p.instruction) line += `\nNote: "${p.instruction}"`;
@@ -402,8 +377,8 @@ After executing, write a brief one-line result per position.
     _managementBusy = false;
     if (!silent && telegramEnabled()) {
       if (mgmtReport) {
-        if (liveMessage) await liveMessage.finalize(stripThink(mgmtReport)).catch(() => {});
-        else sendMessage(`🔄 Management Cycle\n\n${stripThink(mgmtReport)}`).catch(() => { });
+        if (liveMessage) await liveMessage.finalize(mgmtReport).catch(() => {});
+        else sendMessage(`🔄 Management Cycle\n\n${mgmtReport}`).catch(() => { });
       }
       for (const p of positions) {
         if (!p.in_range && p.minutes_out_of_range >= config.management.outOfRangeWaitMinutes) {
@@ -658,6 +633,15 @@ Positions: ${prePositions.total_positions}/${config.risk.maxPositions} | SOL: ${
 PRE-LOADED CANDIDATES (${passing.length} pools):
 ${candidateBlocks.join("\n\n")}
 
+DECISION FORMAT:
+Output ONLY a JSON decision object. Do NOT format messages or include analysis.
+
+For deploy:
+{"action":"deploy","pair":"<pool_name>","summary":"<1-line reason>"}
+
+For skip:
+{"action":"skip","reason":"<1-line reason>"}
+
 STEPS:
 1. Decide if any candidate is actually worth deploying. One surviving candidate is not automatically good enough.
 2. Pick the best candidate based on narrative quality, smart wallets, and pool metrics.
@@ -666,61 +650,15 @@ STEPS:
    pass deploy_position.volatility = the candidate volatility value.
    For single-side SOL deploys, do not invent upside:
    set amount_y only, keep amount_x = 0, keep bins_above = 0, and let the upper bin stay at the active bin.
-4. Report in this exact format (no tables, no extra sections):
-   🚀 DEPLOYED
+4. After executing, output the JSON decision with a 1-line summary.
 
-   <pool name>
-   <pool address>
-
-   ◎ <deploy amount> SOL | <strategy> | bin <active_bin>
-   Range: <minPrice> → <maxPrice>
-   Range cover: <downside %> downside | <upside %> upside | <total width %> total
-
-   IMPORTANT:
-   - Do NOT calculate the range percentages yourself.
-   - Use the actual deploy_position tool result:
-     range_coverage.downside_pct
-     range_coverage.upside_pct
-     range_coverage.width_pct
-
-   MARKET
-   Fee/TVL: <x>%
-   Volume: $<x>
-   TVL: $<x>
-   Volatility: <x>
-   Organic: <x>
-   Mcap: $<x>
-   Age: <x>h
-
-   AUDIT
-   Top10: <x>%
-   Bots: <x>%
-   Fees paid: <x> SOL
-   Smart wallets: <names or none>
-
-   RISK
-   <If OKX advanced/risk data exists, list only the fields that actually exist: Risk level, Bundle, Sniper, Suspicious, ATH distance, Rugpull, Wash.>
-   <If only rugpull/wash exist, list just those.>
-   <If OKX enrichment is missing, write exactly: OKX: unavailable>
-
-   WHY THIS WON
-   <2-4 concise sentences on why this pool won, key risks, and why it still beat the alternatives>
-5. If no pool qualifies, report in this exact format instead:
-   ⛔ NO DEPLOY
-
-   Cycle finished with no valid entry.
-
-   BEST LOOKING CANDIDATE
-   <name or none>
-
-   WHY SKIPPED
-   <2-4 concise sentences explaining why nothing was good enough>
-
-   REJECTED
-   <short flat list of top candidate names and why they were skipped>
-IMPORTANT:
-- Never write "unknown" for OKX. Use real values, omit missing fields, or write exactly "OKX: unavailable".
-- Keep the whole report compact and highly scannable for Telegram.
+Do NOT include:
+- Progress bars (computed from data)
+- Icons (added by formatter)
+- HTML tags (added by formatter)
+- Portfolio summary (computed from data)
+- Tool logs or thinking
+- Market/audit/risk data (already in candidate blocks)
       `, config.llm.maxSteps, [], "SCREENER", config.llm.screeningModel, 2048, {
         onToolStart: async ({ name }) => {
           if (name === "deploy_position") deployAttempted = true;
@@ -734,13 +672,24 @@ IMPORTANT:
           await liveMessage?.toolFinish(name, result, success);
         },
       });
-    screenReport = content;
-    if (/⛔\s*NO DEPLOY/i.test(content)) {
+    
+    // Parse LLM decision and build formatted report
+    const decision = parseDecision(content);
+    log("screening", `LLM decision: ${JSON.stringify(decision)}`);
+    
+    // Build formatted report from code
+    screenReport = formatScreeningReport(passing, decision, {
+      sol: currentBalance.sol,
+      positionCount: prePositions.total_positions,
+      maxPositions: config.risk.maxPositions,
+    });
+    
+    if (decision.action === 'skip') {
       appendDecision({
         type: "no_deploy",
         actor: "SCREENER",
         summary: "LLM chose no deploy",
-        reason: stripThink(content).slice(0, 500),
+        reason: decision.reason || stripThink(content).slice(0, 500),
       });
     } else if (!deploySucceeded) {
       appendDecision({
@@ -757,8 +706,8 @@ IMPORTANT:
     _screeningBusy = false;
     if (!silent && telegramEnabled()) {
       if (screenReport) {
-        if (liveMessage) await liveMessage.finalize(stripThink(screenReport)).catch(() => {});
-        else sendMessage(`🔍 Screening Cycle\n\n${stripThink(screenReport)}`).catch(() => { });
+        if (liveMessage) await liveMessage.finalize(screenReport).catch(() => {});
+        else sendMessage(`🔍 Screening Cycle\n\n${screenReport}`).catch(() => { });
       }
       // Flush any notifications queued during the live-message cycle
       await drainOutgoingQueue().catch(() => {});
