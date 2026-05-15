@@ -121,6 +121,12 @@ RISK SIGNALS (guidelines — use judgment):
 - PVP symbol conflict (same exact symbol across multiple mints) → major negative. Avoid unless the setup is exceptional and clearly stronger than the competing symbol variants.
 - no narrative + no smart wallets → skip
 
+YIELD HARD RULE (override any yield temptation):
+- fee/TVL ratio is NEVER sufficient alone. It must be combined with at least ONE positive fundamental: narrative, smart wallets, or strong pool memory.
+- If you previously rejected a pool for "no narrative", "no smart wallets", or "poor memory" — a higher fee/TVL does NOT override that rejection. The fundamental weakness remains.
+- High fee/TVL on a token with no narrative and no smart money = bait. Fees come from volume, and volume on a dead token is wash trading or a即将 dump.
+- DEPLOYMENT requires: (fee/TVL above threshold) AND (narrative OR smart wallets OR positive pool memory). Both conditions must be true.
+
 NARRATIVE QUALITY (your main judgment call):
 - GOOD: specific origin — real event, viral moment, named entity, active community
 - BAD: generic hype ("next 100x", "community token") with no identifiable subject
