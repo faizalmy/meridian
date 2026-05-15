@@ -147,3 +147,187 @@ describe("notifyClose reason — real-world close_reason values from lessons.jso
     expect(msg).toContain("Reason: agent decision");
   });
 });
+
+// ─── sendMessage routing ──────────────────────────────────────────────────────
+describe("sendMessage routing", () => {
+  it("sends with parse_mode HTML", async () => {
+    const { notifyClose } = await import("../../telegram.js");
+    await notifyClose({ pair: "TEST-SOL", pnlUsd: 1, pnlPct: 2, reason: "x" });
+
+    const lastCall = fetchCalls[fetchCalls.length - 1];
+    const body = JSON.parse(lastCall.opts.body);
+    expect(body.parse_mode).toBe("HTML");
+  });
+
+  it("calls the sendMessage Telegram endpoint", async () => {
+    const { notifyClose } = await import("../../telegram.js");
+    await notifyClose({ pair: "TEST-SOL", pnlUsd: 1, pnlPct: 2 });
+
+    const lastCall = fetchCalls[fetchCalls.length - 1];
+    expect(lastCall.url).toContain("sendMessage");
+  });
+});
+
+// ─── notifyDeploy ─────────────────────────────────────────────────────────────
+describe("notifyDeploy", () => {
+  it("includes pair and amount", async () => {
+    const { notifyDeploy } = await import("../../telegram.js");
+    await notifyDeploy({
+      pair: "SOL-USDC",
+      amountSol: 2.5,
+      position: "unused",
+      tx: "unused",
+    });
+
+    const msg = extractSentMessage();
+    expect(msg).toContain("✅ <b>Deployed</b> SOL-USDC");
+    expect(msg).toContain("Amount: 2.5 SOL");
+  });
+
+  it("includes price range when provided", async () => {
+    const { notifyDeploy } = await import("../../telegram.js");
+    await notifyDeploy({
+      pair: "BONK-SOL",
+      amountSol: 1,
+      position: "pos123",
+      tx: "tx123",
+      priceRange: { min: 0.0000123, max: 0.0000456 },
+    });
+
+    const msg = extractSentMessage();
+    // small values should use exponential notation
+    expect(msg).toContain("Price range:");
+    expect(msg).toContain("1.230e-5");
+    expect(msg).toContain("4.560e-5");
+  });
+
+  it("uses toFixed for normal price ranges", async () => {
+    const { notifyDeploy } = await import("../../telegram.js");
+    await notifyDeploy({
+      pair: "SOL-USDC",
+      amountSol: 1,
+      position: "pos",
+      tx: "tx",
+      priceRange: { min: 0.123456, max: 0.654321 },
+    });
+
+    const msg = extractSentMessage();
+    expect(msg).toContain("0.123456");
+    expect(msg).toContain("0.654321");
+  });
+
+  it("includes range coverage when provided", async () => {
+    const { notifyDeploy } = await import("../../telegram.js");
+    await notifyDeploy({
+      pair: "SOL-USDC",
+      amountSol: 1,
+      position: "pos",
+      tx: "tx",
+      rangeCoverage: { downside_pct: 12.5, upside_pct: 8.3, width_pct: 20.8 },
+    });
+
+    const msg = extractSentMessage();
+    expect(msg).toContain("Range cover:");
+    expect(msg).toContain("12.50% downside");
+    expect(msg).toContain("8.30% upside");
+    expect(msg).toContain("20.80% total");
+  });
+
+  it("includes bin step and base fee when provided", async () => {
+    const { notifyDeploy } = await import("../../telegram.js");
+    await notifyDeploy({
+      pair: "SOL-USDC",
+      amountSol: 1,
+      position: "pos",
+      tx: "tx",
+      binStep: 10,
+      baseFee: 0.25,
+    });
+
+    const msg = extractSentMessage();
+    expect(msg).toContain("Bin step: 10");
+    expect(msg).toContain("Base fee: 0.25%");
+  });
+
+  it("omits optional sections when not provided", async () => {
+    const { notifyDeploy } = await import("../../telegram.js");
+    await notifyDeploy({
+      pair: "SOL-USDC",
+      amountSol: 1,
+      position: "pos",
+      tx: "tx",
+    });
+
+    const msg = extractSentMessage();
+    expect(msg).not.toContain("Price range:");
+    expect(msg).not.toContain("Range cover:");
+    expect(msg).not.toContain("Bin step:");
+  });
+});
+
+// ─── notifySwap ───────────────────────────────────────────────────────────────
+describe("notifySwap", () => {
+  it("shows input/output symbols and amounts with tx", async () => {
+    const { notifySwap } = await import("../../telegram.js");
+    await notifySwap({
+      inputSymbol: "SOL",
+      outputSymbol: "USDC",
+      amountIn: 1.5,
+      amountOut: 225.75,
+      tx: "SwapHashAbCdEf123456",
+    });
+
+    const msg = extractSentMessage();
+    expect(msg).toContain("🔄 <b>Swapped</b> SOL → USDC");
+    expect(msg).toContain("In: 1.5 | Out: 225.75");
+    expect(msg).toContain("Tx: <code>SwapHashAbCdEf12...</code>");
+  });
+
+  it("handles null/undefined amounts gracefully", async () => {
+    const { notifySwap } = await import("../../telegram.js");
+    await notifySwap({
+      inputSymbol: "BONK",
+      outputSymbol: "SOL",
+      amountIn: null,
+      amountOut: undefined,
+      tx: "tx123",
+    });
+
+    const msg = extractSentMessage();
+    expect(msg).toContain("In: ? | Out: ?");
+  });
+
+  it("truncates long tx hashes to 16 chars", async () => {
+    const { notifySwap } = await import("../../telegram.js");
+    await notifySwap({
+      inputSymbol: "SOL",
+      outputSymbol: "USDC",
+      amountIn: 1,
+      amountOut: 100,
+      tx: "AAAAAAAAAAAAAAAAAAAAAAAA",
+    });
+
+    const msg = extractSentMessage();
+    expect(msg).toContain("Tx: <code>AAAAAAAAAAAAAAAA...</code>");
+  });
+});
+
+// ─── notifyOutOfRange ─────────────────────────────────────────────────────────
+describe("notifyOutOfRange", () => {
+  it("includes pair and minutes OOR", async () => {
+    const { notifyOutOfRange } = await import("../../telegram.js");
+    await notifyOutOfRange({ pair: "SOL-USDC", minutesOOR: 45 });
+
+    const msg = extractSentMessage();
+    expect(msg).toContain("⚠️ <b>Out of Range</b> SOL-USDC");
+    expect(msg).toContain("Been OOR for 45 minutes");
+  });
+
+  it("handles zero minutes OOR", async () => {
+    const { notifyOutOfRange } = await import("../../telegram.js");
+    await notifyOutOfRange({ pair: "BONK-SOL", minutesOOR: 0 });
+
+    const msg = extractSentMessage();
+    expect(msg).toContain("Been OOR for 0 minutes");
+  });
+});

@@ -456,9 +456,7 @@ export function notifyDeploy({ pair, amountSol, position, tx, priceRange, rangeC
       `Amount: ${amountSol} SOL\n` +
       priceStr +
       coverageStr +
-      poolStr +
-      `Position: <code>${position?.slice(0, 8)}...</code>\n` +
-      `Tx: <code>${tx?.slice(0, 16)}...</code>`
+      poolStr
     );
   });
 }
