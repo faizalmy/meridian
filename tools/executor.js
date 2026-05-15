@@ -8,6 +8,7 @@ import {
   claimFees,
   closePosition,
   searchPools,
+  getPool,
 } from "./dlmm.js";
 import { getWalletBalances, swapToken } from "./wallet.js";
 import { studyTopLPers } from "./study.js";
@@ -609,18 +610,61 @@ export async function executeTool(name, args) {
         // Auto-swap base token back to SOL unless user said to hold
         if (!args.skip_swap && result.base_mint) {
           try {
-            const balances = await getWalletBalances({});
-            const token = balances.tokens?.find(t => t.mint === result.base_mint);
+            let balances = await getWalletBalances({});
+            let token = balances.tokens?.find(t => t.mint === result.base_mint);
+            // Retry once after 3s if RPC hasn't settled yet
+            if (!token || token.usd < 0.10) {
+              await new Promise(r => setTimeout(r, 3000));
+              balances = await getWalletBalances({});
+              token = balances.tokens?.find(t => t.mint === result.base_mint);
+            }
             if (token && token.usd >= 0.10) {
               log("executor", `Auto-swapping ${token.symbol || result.base_mint.slice(0, 8)} ($${token.usd.toFixed(2)}) back to SOL`);
               const swapResult = await swapToken({ input_mint: result.base_mint, output_mint: "SOL", amount: token.balance });
-              // Tell the model the swap already happened so it doesn't call swap_token again
               result.auto_swapped = true;
               result.auto_swap_note = `Base token already auto-swapped back to SOL (${token.symbol || result.base_mint.slice(0, 8)} → SOL). Do NOT call swap_token again.`;
               if (swapResult?.amount_out) result.sol_received = swapResult.amount_out;
             }
           } catch (e) {
             log("executor_warn", `Auto-swap after close failed: ${e.message}`);
+          }
+        }
+
+        // Fallback sweep: if auto-swap didn't happen, resolve the base mint
+        // from the closed pool and only sweep that specific token (not all wallet tokens)
+        if (result.success && !result.auto_swapped && result.pool) {
+          try {
+            // Resolve the base mint (tokenX) from the closed pool
+            const SOL_MINT = config.tokens.SOL;
+            let fallbackMint = null;
+            try {
+              const pool = await getPool(result.pool);
+              const tokenXMint = pool.lbPair.tokenXMint.toString();
+              const tokenYMint = pool.lbPair.tokenYMint.toString();
+              fallbackMint = tokenXMint !== SOL_MINT ? tokenXMint : tokenYMint;
+            } catch (poolErr) {
+              log("executor_warn", `Fallback sweep could not resolve pool mints for ${result.pool?.slice?.(0, 8)}: ${poolErr.message}`);
+            }
+
+            if (fallbackMint) {
+              await new Promise(r => setTimeout(r, 3000));
+              const balances = await getWalletBalances({});
+              const token = balances.tokens?.find(t => t.mint === fallbackMint);
+              if (token && token.usd >= 0.10) {
+                log("executor", `Fallback sweep: swapping ${token.symbol || fallbackMint.slice(0, 8)} ($${token.usd.toFixed(2)}) back to SOL`);
+                try {
+                  const swapResult = await swapToken({ input_mint: fallbackMint, output_mint: "SOL", amount: token.balance });
+                  log("executor", `Fallback swap succeeded: ${token.symbol || fallbackMint.slice(0, 8)} → SOL`);
+                  result.auto_swapped = true;
+                  result.auto_swap_note = `Fallback sweep swapped ${token.symbol || fallbackMint.slice(0, 8)} → SOL.`;
+                  if (swapResult?.amount_out) result.sol_received = (result.sol_received || 0) + swapResult.amount_out;
+                } catch (swapErr) {
+                  log("executor_warn", `Fallback swap failed for ${token.symbol || fallbackMint.slice(0, 8)}: ${swapErr.message}`);
+                }
+              }
+            }
+          } catch (e) {
+            log("executor_warn", `Fallback sweep failed: ${e.message}`);
           }
         }
       } else if (name === "claim_fees" && config.management.autoSwapAfterClaim && result.base_mint) {
