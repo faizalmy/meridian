@@ -180,6 +180,11 @@ export async function sendMessageWithButtons(text, inlineKeyboard) {
   });
 }
 
+export async function sendHTML(html) {
+  if (!TOKEN || !chatId) return;
+  return postTelegram("sendMessage", { text: html.slice(0, 4096), parse_mode: "HTML" });
+}
+
 export async function editMessage(text, messageId) {
   if (!TOKEN || !chatId || !messageId) return null;
   return postTelegram("editMessageText", {
