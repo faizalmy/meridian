@@ -302,7 +302,18 @@ export async function runManagementCycle({ silent = false } = {}) {
       const bar = buildRangeBar(p);
       if (bar) line += `\n${bar}`;
       if (p.instruction) line += `\nNote: "${p.instruction}"`;
-      if (act.action === "CLOSE" && act.rule === "exit") line += `\n⚡ Trailing TP: ${escapeHtml(act.reason)}`;
+      if (act.action === "CLOSE" && act.rule === "exit") {
+        const reason = act.reason || '';
+        let icon = '⚡';
+        if (/out of range/i.test(reason)) icon = '📡 OOR:';
+        else if (/stop loss/i.test(reason)) icon = '🛑 SL:';
+        else if (/trailing/i.test(reason)) icon = '⚡ Trailing TP:';
+        else if (/low yield/i.test(reason)) icon = '📉 Low yield:';
+        else if (/rule 3/i.test(reason)) icon = '📏 Rule 3:';
+        else if (/rule 4/i.test(reason)) icon = '📏 Rule 4:';
+        else icon = '⚡ Exit:';
+        line += `\n${icon} ${escapeHtml(reason)}`;
+      }
       if (act.action === "CLOSE" && act.rule && act.rule !== "exit") line += `\nRule ${act.rule}: ${escapeHtml(act.reason)}`;
       if (act.action === "CLAIM") line += `\n→ Claiming fees`;
       return line;
