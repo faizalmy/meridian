@@ -89,8 +89,9 @@ async function dsFetch(url, { rateLimitType = "pair", retries = 2 } = {}) {
       if (res.status === 429) {
         // Rate limited — parse Retry-After or use exponential backoff
         const retryAfter = res.headers.get("retry-after");
-        const backoffMs = retryAfter
-          ? parseInt(retryAfter, 10) * 1000
+        const parsedRetry = retryAfter ? parseInt(retryAfter, 10) : NaN;
+        const backoffMs = Number.isFinite(parsedRetry) && parsedRetry > 0
+          ? parsedRetry * 1000
           : (1000 * Math.pow(2, attempt)) + Math.random() * 500;
 
         if (attempt < retries) {
@@ -220,7 +221,8 @@ export async function getDexScreenerBatch({ mints }) {
       const mintPairs = grouped.get(mint) || [];
       mintPairs.sort((a, b) => (b.volume?.h24 || 0) - (a.volume?.h24 || 0));
       results.set(mint, mintPairs);
-      setCachedPair(`mint:${mint}`, mintPairs);
+      // Don't cache empty results — token may appear on DexScreener later
+      if (mintPairs.length > 0) setCachedPair(`mint:${mint}`, mintPairs);
     }
 
     // Brief pause between batches if chunked
@@ -253,8 +255,11 @@ export async function getDexScreenerTokenPairs({ mint }) {
   if (!mint) return [];
   const res = await dsFetch(`${DS_BASE}/token-pairs/v1/solana/${mint}`, { rateLimitType: "pair" });
   if (!res.ok) return [];
-  const pairs = await res.json();
-  const sol = Array.isArray(pairs) ? pairs.filter((p) => p.chainId === "solana") : [];
+  let sol;
+  try {
+    const pairs = await res.json();
+    sol = Array.isArray(pairs) ? pairs.filter((p) => p.chainId === "solana") : [];
+  } catch { return []; }
   sol.sort((a, b) => (b.volume?.h24 || 0) - (a.volume?.h24 || 0));
   return sol;
 }
@@ -363,7 +368,7 @@ export async function getDexScreenerBoosts() {
   const res = await dsFetch(`${DS_BASE}/token-boosts/top/v1`, { rateLimitType: "trending" });
   if (!res.ok) return _boostsCache || [];
   const data = await res.json();
-  const sol = data.filter((d) => d.chainId === "solana");
+  const sol = Array.isArray(data) ? data.filter((d) => d.chainId === "solana") : [];
   _boostsCache = sol;
   _boostsCacheTs = now;
   return sol;
