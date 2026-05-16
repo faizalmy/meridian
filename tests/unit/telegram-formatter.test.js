@@ -8,6 +8,7 @@ import {
   formatManagementReport, formatScreeningReport,
   formatDeployNotification, formatCloseNotification,
   parseDecision,
+  stripMarkdown,
 } from "../../telegram-formatter.js";
 
 // ─── HTML Helpers ────────────────────────────────────────────────
@@ -609,5 +610,79 @@ describe("parseDecision", () => {
     const result = parseDecision('Based on analysis, I recommend {"action":"skip","reason":"low volume"} please.');
     expect(result.action).toBe("skip");
     expect(result.reason).toBe("low volume");
+  });
+});
+
+// ─── stripMarkdown ──────────────────────────────────────────────
+
+describe("stripMarkdown", () => {
+  it("removes bold markers", () => {
+    expect(stripMarkdown("**hello** world")).toBe("hello world");
+  });
+
+  it("removes italic markers", () => {
+    expect(stripMarkdown("*hello* world")).toBe("hello world");
+  });
+
+  it("removes inline code", () => {
+    expect(stripMarkdown("use `deploy_position` tool")).toBe("use deploy_position tool");
+  });
+
+  it("removes fenced code blocks", () => {
+    expect(stripMarkdown("text\n```\ncode block\n```\nmore")).toBe("text\nmore");
+  });
+
+  it("removes headings", () => {
+    expect(stripMarkdown("### Heading")).toBe("Heading");
+  });
+
+  it("converts unordered list markers to bullets", () => {
+    expect(stripMarkdown("- item one\n- item two")).toBe("• item one\n• item two");
+  });
+
+  it("converts ordered list markers to bullets", () => {
+    expect(stripMarkdown("1. first\n2. second")).toBe("• first\n• second");
+  });
+
+  it("removes blockquotes", () => {
+    expect(stripMarkdown("> quoted text")).toBe("quoted text");
+  });
+
+  it("removes link syntax keeping text", () => {
+    expect(stripMarkdown("[click here](https://example.com)")).toBe("click here");
+  });
+
+  it("removes strikethrough", () => {
+    expect(stripMarkdown("~~deleted~~ text")).toBe("deleted text");
+  });
+
+  it("removes thinking tags", () => {
+    expect(stripMarkdown("<thinking>analysis</thinking> result")).toBe("result");
+    expect(
+      stripMarkdown(
+        "<" + "redacted_" + "thinking>analysis</" + "redacted_" + "thinking> result",
+      ),
+    ).toBe("result");
+  });
+
+  it("removes HTML tags LLMs emit", () => {
+    expect(stripMarkdown("<p>paragraph</p>")).toBe("paragraph");
+  });
+
+  it("returns falsy values as-is", () => {
+    expect(stripMarkdown(null)).toBe(null);
+    expect(stripMarkdown(undefined)).toBe(undefined);
+    expect(stripMarkdown("")).toBe("");
+  });
+
+  it("handles mixed markdown", () => {
+    const input = "## Summary\n\n**Deploy** `LADA-SOL` because:\n- Smart wallets present\n- Narrative is strong\n\n> High conviction";
+    const result = stripMarkdown(input);
+    expect(result).not.toContain("##");
+    expect(result).not.toContain("**");
+    expect(result).not.toContain("`");
+    expect(result).toContain("Deploy");
+    expect(result).toContain("LADA-SOL");
+    expect(result).toContain("• Smart wallets present");
   });
 });

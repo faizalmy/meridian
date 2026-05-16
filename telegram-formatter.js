@@ -293,6 +293,79 @@ function parseDecision(text) {
   return { action: 'skip', reason: 'Could not parse LLM decision' };
 }
 
+// ─── Markdown Stripping ────────────────────────────────────────
+
+/**
+ * Strip markdown formatting from LLM output for Telegram HTML parse mode.
+ * Converts markdown to plain text (or HTML where safe).
+ */
+function stripMarkdown(text) {
+  if (!text) return text;
+  let s = String(text);
+
+  // <thinking>...</thinking> and <think>...</think>
+  s = s.replace(/<(?:redacted_)?thinking>[\s\S]*?<\/(?:redacted_)?thinking>/gi, "");
+  // Leaked / obfuscated tags: ZWSP splits "<" from "thinking" (no literal "<" before "thinking")
+  const z = "\u200B";
+  s = s.replace(
+    new RegExp(
+      z +
+        "?thinking" +
+        z +
+        "?>[^<]*?<\\/" +
+        z +
+        "?thinking" +
+        z +
+        "?>",
+      "gi",
+    ),
+    "",
+  );
+
+  // Remove fenced code blocks; collapse extra blank lines left around the fence
+  s = s.replace(/\n*```[\s\S]*?```\n*/g, "\n");
+
+  // Remove inline code: `code`
+  s = s.replace(/`([^`\n]+)`/g, '$1');
+
+  // Remove bold: **text** or __text__
+  s = s.replace(/\*\*([^*]+)\*\*/g, '$1');
+  s = s.replace(/__([^_]+)__/g, '$1');
+
+  // Remove italic: *text* or _text_
+  s = s.replace(/(?<!\*)\*(?!\*)([^*]+)(?<!\*)\*(?!\*)/g, '$1');
+  s = s.replace(/(?<!_)_(?!_)([^_]+)(?<!_)_(?!_)/g, '$1');
+
+  // Remove strikethrough: ~~text~~
+  s = s.replace(/~~([^~]+)~~/g, '$1');
+
+  // Remove headings: ### text → text
+  s = s.replace(/^#{1,6}\s+/gm, '');
+
+  // Remove blockquotes: > text → text
+  s = s.replace(/^>\s?/gm, '');
+
+  // Remove horizontal rules: --- or *** or ___
+  s = s.replace(/^[-*_]{3,}\s*$/gm, '');
+
+  // Remove unordered list markers: - item or * item → • item
+  s = s.replace(/^(\s*)[-*]\s+/gm, '$1• ');
+
+  // Remove ordered list markers: 1. item → • item
+  s = s.replace(/^(\s*)\d+\.\s+/gm, '$1• ');
+
+  // Remove link syntax: [text](url) → text
+  s = s.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+
+  // Remove image syntax: ![alt](url)
+  s = s.replace(/!\[([^\]]*)\]\([^)]+\)/g, '');
+
+  // Remove HTML tags that LLMs sometimes emit
+  s = s.replace(/<\/?(?:p|br|hr|div|span|pre|blockquote|ul|ol|li|h[1-6])[^>]*>/gi, '');
+
+  return s.trim();
+}
+
 // ─── Exports ───────────────────────────────────────────────────
 
 export {
@@ -321,4 +394,7 @@ export {
 
   // LLM parsing
   parseDecision,
+
+  // Markdown stripping
+  stripMarkdown,
 };

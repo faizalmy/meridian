@@ -27,7 +27,7 @@ import {
 import { generateBriefing } from "./briefing.js";
 import { getLastBriefingDate, setLastBriefingDate, getTrackedPosition, getTrackedPositions, setPositionInstruction, updatePnlAndCheckExits, queuePeakConfirmation, resolvePendingPeak, queueTrailingDropConfirmation, resolvePendingTrailingDrop } from "./state.js";
 import { getActiveStrategy } from "./strategy-library.js";
-import { bold, escapeHtml, buildRangeBar as fmtRangeBar, formatAge, formatPct, formatScreeningReport, parseDecision, getExitLabel } from "./telegram-formatter.js";
+import { bold, escapeHtml, buildRangeBar as fmtRangeBar, formatAge, formatPct, formatScreeningReport, parseDecision, getExitLabel, stripMarkdown } from "./telegram-formatter.js";
 import { recordPositionSnapshot, recallForPool, addPoolNote, recordScreeningRejection } from "./pool-memory.js";
 import { checkSmartWalletsOnPool } from "./smart-wallets.js";
 import { getTokenNarrative, getTokenInfo } from "./tools/token.js";
@@ -379,8 +379,8 @@ After executing, write a brief one-line result per position.
     _managementBusy = false;
     if (!silent && telegramEnabled()) {
       if (mgmtReport) {
-        if (liveMessage) await liveMessage.finalize(mgmtReport).catch(() => {});
-        else sendMessage(`🔄 Management Cycle\n\n${mgmtReport}`).catch(() => { });
+        if (liveMessage) await liveMessage.finalize(stripMarkdown(mgmtReport)).catch(() => {});
+        else sendMessage(stripMarkdown(`🔄 Management Cycle\n\n${mgmtReport}`)).catch(() => { });
       }
       for (const p of positions) {
         if (!p.in_range && p.minutes_out_of_range >= config.management.outOfRangeWaitMinutes) {
@@ -459,17 +459,21 @@ export async function runScreeningCycle({ silent = false } = {}) {
       : `No active strategy — use default bid_ask, bins_above: 0, SOL only.`;
 
     // Fetch top candidates, then recon each sequentially with a small delay to avoid 429s
+    await liveMessage?.note("📡 Discovering pools...");
     const topCandidates = await getTopCandidates({ limit: 10 }).catch(() => null);
     const candidates = (topCandidates?.candidates || topCandidates?.pools || []).slice(0, 10);
     const earlyFilteredExamples = topCandidates?.filtered_examples || [];
 
+    await liveMessage?.note(`📡 Found ${candidates.length} candidates — loading DexScreener data...`);
     const allCandidates = [];
 
     // Collect all mints for batch DexScreener lookup (1 API call for all candidates)
     const candidateMints = candidates.map((pool) => pool.base?.mint).filter(Boolean);
     const dsBatch = await getDexScreenerBatch({ mints: candidateMints }).catch(() => new Map());
 
-    for (const pool of candidates) {
+    for (let i = 0; i < candidates.length; i++) {
+      const pool = candidates[i];
+      await liveMessage?.note(`🔍 Recon ${i + 1}/${candidates.length}: ${pool.name}...`);
       const mint = pool.base?.mint;
       const [smartWallets, narrative, tokenInfo] = await Promise.allSettled([
         checkSmartWalletsOnPool({ pool_address: pool.pool }),
@@ -525,6 +529,8 @@ export async function runScreeningCycle({ silent = false } = {}) {
       return true;
     });
 
+    await liveMessage?.note(`🛡️ ${passing.length}/${allCandidates.length} passed filters — fetching active bins...`);
+
     if (passing.length === 0) {
       const combined = filteredOut.length > 0 ? filteredOut : earlyFilteredExamples;
       const combinedExamples = combined.slice(0, 3)
@@ -577,6 +583,8 @@ export async function runScreeningCycle({ silent = false } = {}) {
     const activeBinResults = await Promise.allSettled(
       passing.map(({ pool }) => getActiveBin({ pool_address: pool.pool }))
     );
+
+    await liveMessage?.note(`🧠 Analyzing ${passing.length} candidates with LLM...`);
 
     // Build compact candidate blocks
     const candidateBlocks = passing.map(({ pool, sw, n, ti, mem, ds }, i) => {
@@ -762,8 +770,8 @@ Do NOT include:
     _screeningBusy = false;
     if (!silent && telegramEnabled()) {
       if (screenReport) {
-        if (liveMessage) await liveMessage.finalize(screenReport).catch(() => {});
-        else sendMessage(`🔍 Screening Cycle\n\n${screenReport}`).catch(() => { });
+        if (liveMessage) await liveMessage.finalize(stripMarkdown(screenReport)).catch(() => {});
+        else sendMessage(stripMarkdown(`🔍 Screening Cycle\n\n${screenReport}`)).catch(() => { });
       }
       // Flush any notifications queued during the live-message cycle
       await drainOutgoingQueue().catch(() => {});
@@ -1701,8 +1709,8 @@ async function telegramHandler(msg) {
       onToolFinish: async ({ name, result, success }) => { await liveMessage?.toolFinish(name, result, success); },
     });
     appendHistory(text, content);
-    if (liveMessage) await liveMessage.finalize(stripThink(content));
-    else await sendMessage(stripThink(content));
+    if (liveMessage) await liveMessage.finalize(stripMarkdown(stripThink(content)));
+    else await sendMessage(stripMarkdown(stripThink(content)));
   } catch (e) {
     if (liveMessage) await liveMessage.fail(e.message).catch(() => {});
     else await sendMessage(`Error: ${e.message}`).catch(() => {});
