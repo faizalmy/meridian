@@ -31,6 +31,7 @@ import { bold, escapeHtml, buildRangeBar as fmtRangeBar, formatAge, formatPct, f
 import { recordPositionSnapshot, recallForPool, addPoolNote, recordScreeningRejection } from "./pool-memory.js";
 import { checkSmartWalletsOnPool } from "./smart-wallets.js";
 import { getTokenNarrative, getTokenInfo } from "./tools/token.js";
+import { getDexScreenerBatch, extractPairMetrics, formatTrendingForPrompt } from "./tools/dexscreener.js";
 import { stageSignals } from "./signal-tracker.js";
 import { getWeightsSummary } from "./signal-weights.js";
 import { bootstrapHiveMind, ensureAgentId, getHiveMindPullMode, isHiveMindEnabled, pullHiveMindLessons, pullHiveMindPresets, registerHiveMindAgent, startHiveMindBackgroundSync } from "./hivemind.js";
@@ -463,6 +464,11 @@ export async function runScreeningCycle({ silent = false } = {}) {
     const earlyFilteredExamples = topCandidates?.filtered_examples || [];
 
     const allCandidates = [];
+
+    // Collect all mints for batch DexScreener lookup (1 API call for all candidates)
+    const candidateMints = candidates.map((pool) => pool.base?.mint).filter(Boolean);
+    const dsBatch = await getDexScreenerBatch({ mints: candidateMints }).catch(() => new Map());
+
     for (const pool of candidates) {
       const mint = pool.base?.mint;
       const [smartWallets, narrative, tokenInfo] = await Promise.allSettled([
@@ -470,19 +476,24 @@ export async function runScreeningCycle({ silent = false } = {}) {
         mint ? getTokenNarrative({ mint }) : Promise.resolve(null),
         mint ? getTokenInfo({ query: mint }) : Promise.resolve(null),
       ]);
+      // Get best pair from batch result (highest volume SOL pair)
+      const mintPairs = mint ? (dsBatch.get(mint) || []) : [];
+      const dsPair = mintPairs[0] || null;
+      const dsMetrics = extractPairMetrics(dsPair);
       allCandidates.push({
         pool,
         sw: smartWallets.status === "fulfilled" ? smartWallets.value : null,
         n: narrative.status === "fulfilled" ? narrative.value : null,
         ti: tokenInfo.status === "fulfilled" ? tokenInfo.value?.results?.[0] : null,
         mem: recallForPool(pool.pool),
+        ds: dsMetrics,
       });
-      await new Promise(r => setTimeout(r, 150)); // avoid 429s
+      await new Promise(r => setTimeout(r, 150)); // avoid 429s on Jupiter/OKX APIs
     }
 
     // Hard filters after token recon — block launchpads and excessive Jupiter bot holders
     const filteredOut = [];
-    const passing = allCandidates.filter(({ pool, ti }) => {
+    const passing = allCandidates.filter(({ pool, ti, ds }) => {
       const launchpad = ti?.launchpad ?? null;
       if (launchpad && config.screening.allowedLaunchpads?.length > 0 && !config.screening.allowedLaunchpads.includes(launchpad)) {
         log("screening", `Skipping ${pool.name} — launchpad ${launchpad} not in allow-list`);
@@ -500,6 +511,16 @@ export async function runScreeningCycle({ silent = false } = {}) {
         log("screening", `Bot-holder filter: dropped ${pool.name} — bots ${botPct}% > ${maxBotHoldersPct}%`);
         filteredOut.push({ name: pool.name, reason: `bot holders ${botPct}% > ${maxBotHoldersPct}%` });
         return false;
+      }
+      // DexScreener sell-pressure filter — reject if sells dominate 1h txns
+      const maxSellPct = config.screening.maxSellPct;
+      if (ds && maxSellPct != null && ds.ds_buy_pct_1h != null) {
+        const sellPct = 100 - ds.ds_buy_pct_1h;
+        if (sellPct > maxSellPct) {
+          log("screening", `Sell-pressure filter: dropped ${pool.name} — sells ${sellPct.toFixed(0)}% > ${maxSellPct}%`);
+          filteredOut.push({ name: pool.name, reason: `sell pressure ${sellPct.toFixed(0)}% > ${maxSellPct}% (1h txns)` });
+          return false;
+        }
       }
       return true;
     });
@@ -558,7 +579,7 @@ export async function runScreeningCycle({ silent = false } = {}) {
     );
 
     // Build compact candidate blocks
-    const candidateBlocks = passing.map(({ pool, sw, n, ti, mem }, i) => {
+    const candidateBlocks = passing.map(({ pool, sw, n, ti, mem, ds }, i) => {
       const botPct = ti?.audit?.bot_holders_pct ?? "?";
       const top10Pct = ti?.audit?.top_holders_pct ?? "?";
       const feesSol = ti?.global_fees_sol ?? "?";
@@ -601,6 +622,9 @@ export async function runScreeningCycle({ silent = false } = {}) {
         `  smart_wallets: ${sw?.in_pool?.length ?? 0} present${sw?.in_pool?.length ? ` → CONFIDENCE BOOST (${sw.in_pool.map(w => w.name).join(", ")})` : ""}`,
         activeBin != null ? `  active_bin: ${activeBin}` : null,
         priceChange != null ? `  1h: price${priceChange >= 0 ? "+" : ""}${priceChange}%, net_buyers=${netBuyers ?? "?"}` : null,
+        ds ? `  dexscreener: buys_1h=${ds.ds_buys_1h}, sells_1h=${ds.ds_sells_1h}, buy_ratio=${ds.ds_buy_ratio_1h}, buy_pct=${ds.ds_buy_pct_1h}%` : null,
+        ds ? `  ds_price: 5m=${ds.ds_price_change_5m ?? "?"}%, 1h=${ds.ds_price_change_1h ?? "?"}%, 6h=${ds.ds_price_change_6h ?? "?"}%, 24h=${ds.ds_price_change_24h ?? "?"}%` : null,
+        ds?.ds_boosts_active ? `  ds_boosts: ${ds.ds_boosts_active} active` : null,
         n?.narrative ? `  narrative_untrusted: ${sanitizeUntrustedPromptText(n.narrative, 500)}` : `  narrative_untrusted: none`,
         mem ? `  memory_untrusted: ${sanitizeUntrustedPromptText(mem, 500)}` : null,
       ].filter(Boolean).join("\n");
@@ -626,13 +650,16 @@ export async function runScreeningCycle({ silent = false } = {}) {
 
     const weightsSummary = config.darwin?.enabled ? getWeightsSummary() : null;
 
+    // Fetch trending narratives for prompt context (cached 15min)
+    const trendingContext = await formatTrendingForPrompt().catch(() => null);
+
     let deployAttempted = false;
     let deploySucceeded = false;
     const { content } = await agentLoop(`
 SCREENING CYCLE
 ${strategyBlock}
 Positions: ${prePositions.total_positions}/${config.risk.maxPositions} | SOL: ${currentBalance.sol.toFixed(3)} | Deploy: ${deployAmount} SOL
-
+${trendingContext ? `\nHOT NARRATIVES (DexScreener): ${trendingContext}\n` : ""}
 PRE-LOADED CANDIDATES (${passing.length} pools):
 ${candidateBlocks.join("\n\n")}
 
