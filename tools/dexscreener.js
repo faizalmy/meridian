@@ -60,6 +60,17 @@ export function getRateLimitStatus() {
   return result;
 }
 
+/**
+ * Clear all caches. Exported for testing only.
+ */
+export function clearDexScreenerCaches() {
+  _pairCache.clear();
+  _trendingCache = null;
+  _trendingCacheTs = 0;
+  _boostsCache = null;
+  _boostsCacheTs = 0;
+}
+
 // ── Retry Fetch ───────────────────────────────────────────────
 
 async function dsFetch(url, { rateLimitType = "pair", retries = 2 } = {}) {
@@ -266,7 +277,7 @@ export function extractPairMetrics(pair) {
     // Buy/sell ratios
     ds_buys_1h: buys1h,
     ds_sells_1h: sells1h,
-    ds_buy_ratio_1h: total1h > 0 ? parseFloat((buys1h / sells1h).toFixed(2)) : null,
+    ds_buy_ratio_1h: total1h > 0 && sells1h > 0 ? parseFloat((buys1h / sells1h).toFixed(2)) : null,
     ds_buy_pct_1h: total1h > 0 ? parseFloat(((buys1h / total1h) * 100).toFixed(0)) : null,
 
     // Multi-timeframe price changes (already percentages from API)
