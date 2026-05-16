@@ -508,7 +508,7 @@ export async function runScreeningCycle({ silent = false } = {}) {
         .map((entry) => `- ${entry.name}: ${entry.reason}`)
         .join("\n");
       screenReport = combinedExamples
-        ? `No candidates available.\nFiltered examples:\n${combinedExamples}`
+        ? `No candidates available.\n\n${combinedExamples}`
         : `No candidates available (all filtered by launchpad / holder-quality rules).`;
       appendDecision({
         type: "no_deploy",
@@ -1306,7 +1306,7 @@ async function runDeterministicScreen(limit = 5) {
     .map((entry) => `- ${entry.name}: ${entry.reason}`)
     .join("\n");
   return examples
-    ? `No candidates available.\nFiltered examples:\n${examples}`
+    ? `No candidates available.\n\n${examples}`
     : "No candidates available right now.";
 }
 
