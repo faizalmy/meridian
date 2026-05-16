@@ -16,6 +16,11 @@ const ALLOWED_USER_IDS = new Set(
 );
 
 let chatId   = process.env.TELEGRAM_CHAT_ID || null;
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
 let _offset  = 0;
 let _polling = false;
 let _liveMessageDepth = 0;
@@ -464,10 +469,10 @@ export function notifyDeploy({ pair, amountSol, position, tx, priceRange, rangeC
 export function notifyClose({ pair, pnlUsd, pnlPct, reason }) {
   enqueueNotification(async () => {
     const sign = pnlUsd >= 0 ? "+" : "";
-    const reasonLine = reason ? `Reason: ${reason}\n` : "";
+    const reasonLine = reason ? `Reason: ${escapeHtml(reason)}\n` : "";
     const icon = pnlPct > 0 ? "🟢" : pnlPct < 0 ? "🔴" : "⚪";
     await sendMessage(
-      `${icon} <b>Closed</b> ${pair}\n` +
+      `${icon} <b>Closed</b> ${escapeHtml(pair)}\n` +
       `PnL: ${sign}$${(pnlUsd ?? 0).toFixed(2)} (${sign}${(pnlPct ?? 0).toFixed(2)}%)\n` +
       reasonLine
     );

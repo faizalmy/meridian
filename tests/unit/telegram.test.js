@@ -112,7 +112,7 @@ describe("notifyClose reason — real-world close_reason values from lessons.jso
     await notifyClose({ pair: "RKC-SOL", pnlUsd: -3.78, pnlPct: -9.71, reason: "stop loss: PnL -3.22% <= -3%" });
 
     const msg = extractSentMessage();
-    expect(msg).toContain("Reason: stop loss: PnL -3.22% <= -3%");
+    expect(msg).toContain("Reason: stop loss: PnL -3.22% &lt;= -3%");
   });
 
   it("displays user-requested close reason", async () => {
@@ -148,7 +148,281 @@ describe("notifyClose reason — real-world close_reason values from lessons.jso
   });
 });
 
-// ─── sendMessage routing ──────────────────────────────────────────────────────
+// ─── sendMessage core ──────────────────────────────────────────────
+describe("sendMessage", () => {
+  it("truncates text to 4096 chars", async () => {
+    const { sendMessage } = await import("../../telegram.js");
+    const longText = "A".repeat(5000);
+    await sendMessage(longText);
+
+    const lastCall = fetchCalls[fetchCalls.length - 1];
+    const body = JSON.parse(lastCall.opts.body);
+    expect(body.text.length).toBeLessThanOrEqual(4096);
+    expect(body.text).toBe("A".repeat(4096));
+  });
+
+  it("does not call fetch when TOKEN is missing", async () => {
+    delete process.env.TELEGRAM_BOT_TOKEN;
+    vi.resetModules();
+    const { sendMessage } = await import("../../telegram.js");
+    await sendMessage("hello");
+    expect(fetchCalls.length).toBe(0);
+  });
+
+  it("does not call fetch when CHAT_ID is missing (env)", async () => {
+    // NOTE: chatId also loads from user-config.json at init.
+    // This test verifies the env-var path — the file may override it.
+    // The key invariant: if BOTH token and chatId are missing, no fetch happens.
+    delete process.env.TELEGRAM_BOT_TOKEN;
+    delete process.env.TELEGRAM_CHAT_ID;
+    vi.resetModules();
+    const { sendMessage } = await import("../../telegram.js");
+    fetchCalls.length = 0;
+    await sendMessage("hello");
+    expect(fetchCalls.length).toBe(0);
+  });
+
+  it("includes chat_id in request body", async () => {
+    const { sendMessage } = await import("../../telegram.js");
+    await sendMessage("test");
+
+    const lastCall = fetchCalls[fetchCalls.length - 1];
+    const body = JSON.parse(lastCall.opts.body);
+    // chat_id comes from env or user-config.json — just verify it's present
+    expect(body.chat_id).toBeTruthy();
+    expect(typeof body.chat_id).toBe("string");
+  });
+
+  it("converts non-string text to string", async () => {
+    const { sendMessage } = await import("../../telegram.js");
+    await sendMessage(12345);
+
+    const lastCall = fetchCalls[fetchCalls.length - 1];
+    const body = JSON.parse(lastCall.opts.body);
+    expect(body.text).toBe("12345");
+  });
+});
+
+// ─── sendMessageWithButtons ───────────────────────────────────────
+describe("sendMessageWithButtons", () => {
+  it("sends message with inline keyboard", async () => {
+    const { sendMessageWithButtons } = await import("../../telegram.js");
+    const keyboard = [[{ text: "Approve", callback_data: "approve_1" }]];
+    await sendMessageWithButtons("Choose:", keyboard);
+
+    const lastCall = fetchCalls[fetchCalls.length - 1];
+    const body = JSON.parse(lastCall.opts.body);
+    expect(body.text).toBe("Choose:");
+    expect(body.parse_mode).toBe("HTML");
+    expect(body.reply_markup.inline_keyboard).toEqual(keyboard);
+  });
+
+  it("truncates text to 4096 chars with buttons", async () => {
+    const { sendMessageWithButtons } = await import("../../telegram.js");
+    await sendMessageWithButtons("X".repeat(5000), [[{ text: "OK", callback_data: "ok" }]]);
+
+    const lastCall = fetchCalls[fetchCalls.length - 1];
+    const body = JSON.parse(lastCall.opts.body);
+    expect(body.text.length).toBeLessThanOrEqual(4096);
+  });
+});
+
+// ─── editMessage ──────────────────────────────────────────────────
+describe("editMessage", () => {
+  it("edits existing message by id", async () => {
+    const { editMessage } = await import("../../telegram.js");
+    await editMessage("updated text", 42);
+
+    const lastCall = fetchCalls[fetchCalls.length - 1];
+    expect(lastCall.url).toContain("editMessageText");
+    const body = JSON.parse(lastCall.opts.body);
+    expect(body.message_id).toBe(42);
+    expect(body.text).toBe("updated text");
+    expect(body.parse_mode).toBe("HTML");
+  });
+
+  it("returns null when messageId is missing", async () => {
+    const { editMessage } = await import("../../telegram.js");
+    const result = await editMessage("text", null);
+    expect(result).toBeNull();
+    // should NOT have called fetch
+    expect(fetchCalls.length).toBe(0);
+  });
+
+  it("returns null when messageId is undefined", async () => {
+    const { editMessage } = await import("../../telegram.js");
+    const result = await editMessage("text", undefined);
+    expect(result).toBeNull();
+  });
+
+  it("truncates text to 4096 chars", async () => {
+    const { editMessage } = await import("../../telegram.js");
+    await editMessage("E".repeat(5000), 1);
+
+    const lastCall = fetchCalls[fetchCalls.length - 1];
+    const body = JSON.parse(lastCall.opts.body);
+    expect(body.text.length).toBeLessThanOrEqual(4096);
+  });
+});
+
+// ─── editMessageWithButtons ───────────────────────────────────────
+describe("editMessageWithButtons", () => {
+  it("edits message with inline keyboard", async () => {
+    const { editMessageWithButtons } = await import("../../telegram.js");
+    const kb = [[{ text: "Close", callback_data: "close_1" }]];
+    await editMessageWithButtons("Updated:", 99, kb);
+
+    const lastCall = fetchCalls[fetchCalls.length - 1];
+    const body = JSON.parse(lastCall.opts.body);
+    expect(lastCall.url).toContain("editMessageText");
+    expect(body.message_id).toBe(99);
+    expect(body.reply_markup.inline_keyboard).toEqual(kb);
+  });
+
+  it("returns null when messageId is missing", async () => {
+    const { editMessageWithButtons } = await import("../../telegram.js");
+    const result = await editMessageWithButtons("text", null, []);
+    expect(result).toBeNull();
+    expect(fetchCalls.length).toBe(0);
+  });
+});
+
+// ─── answerCallbackQuery ──────────────────────────────────────────
+describe("answerCallbackQuery", () => {
+  it("answers callback with text", async () => {
+    const { answerCallbackQuery } = await import("../../telegram.js");
+    await answerCallbackQuery("cb_123", "Done");
+
+    const lastCall = fetchCalls[fetchCalls.length - 1];
+    expect(lastCall.url).toContain("answerCallbackQuery");
+    const body = JSON.parse(lastCall.opts.body);
+    expect(body.callback_query_id).toBe("cb_123");
+    expect(body.text).toBe("Done");
+  });
+
+  it("answers callback without text", async () => {
+    const { answerCallbackQuery } = await import("../../telegram.js");
+    await answerCallbackQuery("cb_456");
+
+    const lastCall = fetchCalls[fetchCalls.length - 1];
+    const body = JSON.parse(lastCall.opts.body);
+    expect(body.callback_query_id).toBe("cb_456");
+    expect(body.text).toBeUndefined();
+  });
+
+  it("returns null when callbackQueryId is missing", async () => {
+    const { answerCallbackQuery } = await import("../../telegram.js");
+    const result = await answerCallbackQuery(null, "test");
+    expect(result).toBeNull();
+  });
+
+  it("truncates text to 200 chars", async () => {
+    const { answerCallbackQuery } = await import("../../telegram.js");
+    await answerCallbackQuery("cb_1", "X".repeat(300));
+
+    const lastCall = fetchCalls[fetchCalls.length - 1];
+    const body = JSON.parse(lastCall.opts.body);
+    expect(body.text.length).toBeLessThanOrEqual(200);
+  });
+});
+
+// ─── fetch error handling ─────────────────────────────────────────
+describe("fetch error handling", () => {
+  it("handles fetch throwing an error", async () => {
+    mockFetch.mockRejectedValueOnce(new Error("network fail"));
+    const { sendMessage } = await import("../../telegram.js");
+    // should not throw
+    await sendMessage("test");
+    expect(log).toHaveBeenCalledWith("telegram_error", expect.stringContaining("failed"));
+  });
+
+  it("handles non-ok response", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 429,
+      text: () => Promise.resolve("Too Many Requests"),
+    });
+    const { sendMessage } = await import("../../telegram.js");
+    await sendMessage("test");
+    expect(log).toHaveBeenCalledWith("telegram_error", expect.stringContaining("429"));
+  });
+});
+
+// ─── notifyDeploy edge cases ──────────────────────────────────────
+describe("notifyDeploy edge cases", () => {
+  it("handles null baseFee gracefully", async () => {
+    const { notifyDeploy } = await import("../../telegram.js");
+    await notifyDeploy({ pair: "X-SOL", amountSol: 1, binStep: 10, baseFee: null });
+
+    const msg = extractSentMessage();
+    expect(msg).toContain("Bin step: 10");
+    expect(msg).toContain("Base fee: ?");
+  });
+
+  it("handles price boundary at exactly 0.0001", async () => {
+    const { notifyDeploy } = await import("../../telegram.js");
+    await notifyDeploy({
+      pair: "X-SOL", amountSol: 1,
+      priceRange: { min: 0.0001, max: 0.0002 },
+    });
+
+    const msg = extractSentMessage();
+    // 0.0001 is NOT < 0.0001, so toFixed
+    expect(msg).toContain("0.000100");
+  });
+});
+
+// ─── notifyOutOfRange edge cases ──────────────────────────────────
+describe("notifyOutOfRange edge cases", () => {
+  it("handles very large OOR duration", async () => {
+    const { notifyOutOfRange } = await import("../../telegram.js");
+    await notifyOutOfRange({ pair: "X-SOL", minutesOOR: 99999 });
+
+    const msg = extractSentMessage();
+    expect(msg).toContain("Been OOR for 99999 minutes");
+  });
+});
+
+describe("notifyClose — HTML escaping", () => {
+  it("escapes < and > in reason to prevent Telegram 400", async () => {
+    const { notifyClose } = await import("../../telegram.js");
+    await notifyClose({ pair: "PRIMIS-SOL", pnlUsd: -0.5, pnlPct: -2.27, reason: "Stop loss: PnL -2.27% <= -2%" });
+
+    const msg = extractSentMessage();
+    // raw < should NOT appear in the message (Telegram would reject it)
+    // the escaped form &lt; should be present instead
+    expect(msg).toContain("&lt;=");
+    expect(msg).not.toMatch(/[^&]<=[^=]/); // no unescaped <=
+  });
+
+  it("escapes HTML in pair name", async () => {
+    const { notifyClose } = await import("../../telegram.js");
+    await notifyClose({ pair: "TEST<SOL>", pnlUsd: 1, pnlPct: 2, reason: "test" });
+
+    const msg = extractSentMessage();
+    expect(msg).toContain("TEST&lt;SOL&gt;");
+    expect(msg).not.toContain("TEST<SOL>");
+  });
+
+  it("escapes ampersand in reason", async () => {
+    const { notifyClose } = await import("../../telegram.js");
+    await notifyClose({ pair: "X-SOL", pnlUsd: 0, pnlPct: 0, reason: "A & B" });
+
+    const msg = extractSentMessage();
+    expect(msg).toContain("A &amp; B");
+  });
+
+  it("still shows clean text for normal reasons (no false escaping)", async () => {
+    const { notifyClose } = await import("../../telegram.js");
+    await notifyClose({ pair: "BONK-SOL", pnlUsd: 2, pnlPct: 5, reason: "take profit" });
+
+    const msg = extractSentMessage();
+    expect(msg).toContain("Reason: take profit");
+    expect(msg).not.toContain("&amp;");
+    expect(msg).not.toContain("&lt;");
+  });
+});
+
 describe("sendMessage routing", () => {
   it("sends with parse_mode HTML", async () => {
     const { notifyClose } = await import("../../telegram.js");
