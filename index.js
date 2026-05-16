@@ -27,7 +27,7 @@ import {
 import { generateBriefing } from "./briefing.js";
 import { getLastBriefingDate, setLastBriefingDate, getTrackedPosition, getTrackedPositions, setPositionInstruction, updatePnlAndCheckExits, queuePeakConfirmation, resolvePendingPeak, queueTrailingDropConfirmation, resolvePendingTrailingDrop } from "./state.js";
 import { getActiveStrategy } from "./strategy-library.js";
-import { bold, buildRangeBar as fmtRangeBar, formatAge, formatPct, formatScreeningReport, parseDecision } from "./telegram-formatter.js";
+import { bold, escapeHtml, buildRangeBar as fmtRangeBar, formatAge, formatPct, formatScreeningReport, parseDecision } from "./telegram-formatter.js";
 import { recordPositionSnapshot, recallForPool, addPoolNote, recordScreeningRejection } from "./pool-memory.js";
 import { checkSmartWalletsOnPool } from "./smart-wallets.js";
 import { getTokenNarrative, getTokenInfo } from "./tools/token.js";
@@ -302,15 +302,15 @@ export async function runManagementCycle({ silent = false } = {}) {
       const bar = buildRangeBar(p);
       if (bar) line += `\n${bar}`;
       if (p.instruction) line += `\nNote: "${p.instruction}"`;
-      if (act.action === "CLOSE" && act.rule === "exit") line += `\n⚡ Trailing TP: ${act.reason}`;
-      if (act.action === "CLOSE" && act.rule && act.rule !== "exit") line += `\nRule ${act.rule}: ${act.reason}`;
+      if (act.action === "CLOSE" && act.rule === "exit") line += `\n⚡ Trailing TP: ${escapeHtml(act.reason)}`;
+      if (act.action === "CLOSE" && act.rule && act.rule !== "exit") line += `\nRule ${act.rule}: ${escapeHtml(act.reason)}`;
       if (act.action === "CLAIM") line += `\n→ Claiming fees`;
       return line;
     });
 
     const needsAction = [...actionMap.values()].filter(a => a.action !== "STAY");
     const actionSummary = needsAction.length > 0
-      ? needsAction.map(a => a.action === "INSTRUCTION" ? "EVAL instruction" : `${a.action}${a.reason ? ` (${a.reason})` : ""}`).join(", ")
+      ? needsAction.map(a => a.action === "INSTRUCTION" ? "EVAL instruction" : `${a.action}${a.reason ? ` (${escapeHtml(a.reason)})` : ""}`).join(", ")
       : "no action";
 
     const cur = config.management.solMode ? "◎" : "$";

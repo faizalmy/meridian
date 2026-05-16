@@ -3,6 +3,10 @@
 
 // ─── HTML Helpers ──────────────────────────────────────────────
 
+function escapeHtml(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 function bold(text) {
   return `<b>${text}</b>`;
 }
@@ -105,8 +109,8 @@ function formatManagementReport(positions, actionMap, portfolio) {
     if (bar) line += `\n${bar}`;
 
     if (p.instruction) line += `\nNote: "${p.instruction}"`;
-    if (act.action === 'CLOSE' && act.rule === 'exit') line += `\n⚡ Trailing TP: ${act.reason}`;
-    if (act.action === 'CLOSE' && act.rule && act.rule !== 'exit') line += `\nRule ${act.rule}: ${act.reason}`;
+    if (act.action === 'CLOSE' && act.rule === 'exit') line += `\n⚡ Trailing TP: ${escapeHtml(act.reason)}`;
+    if (act.action === 'CLOSE' && act.rule && act.rule !== 'exit') line += `\nRule ${act.rule}: ${escapeHtml(act.reason)}`;
     if (act.action === 'CLAIM') line += `\n→ Claiming fees`;
 
     return line;
@@ -114,7 +118,7 @@ function formatManagementReport(positions, actionMap, portfolio) {
 
   const needsAction = [...actionMap.values()].filter(a => a.action !== 'STAY');
   const actionSummary = needsAction.length > 0
-    ? needsAction.map(a => a.action === 'INSTRUCTION' ? 'EVAL instruction' : `${a.action}${a.reason ? ` (${a.reason})` : ''}`).join(', ')
+    ? needsAction.map(a => a.action === 'INSTRUCTION' ? 'EVAL instruction' : `${a.action}${a.reason ? ` (${escapeHtml(a.reason)})` : ''}`).join(', ')
     : 'no action';
 
   return lines.join('\n\n') +
@@ -220,7 +224,7 @@ function formatDeployNotification(data) {
 function formatCloseNotification(data) {
   const { pair, pnlUsd, pnlPct, reason } = data;
 
-  const reasonLine = reason ? `Reason: ${reason}` : '';
+  const reasonLine = reason ? `Reason: ${escapeHtml(reason)}` : '';
   const profit = (pnlUsd ?? 0) >= 0;
   const icon = profit ? '🟢' : '🔴';
   const pnlStr = `${profit ? '' : '-'}$${Math.abs(pnlUsd ?? 0).toFixed(2)}`;
@@ -258,6 +262,7 @@ export {
   bold,
   code,
   italic,
+  escapeHtml,
 
   // Data formatting
   formatAge,

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ─── All exports from telegram-formatter.js ──────────────────────
 import {
-  bold, code, italic,
+  bold, code, italic, escapeHtml,
   formatAge, formatUSD, formatSOL, formatPct, formatPrice,
   buildRangeBar,
   formatManagementReport, formatScreeningReport,
@@ -36,6 +36,21 @@ describe("code", () => {
 describe("italic", () => {
   it("wraps text in <i> tags", () => {
     expect(italic("emphasis")).toBe("<i>emphasis</i>");
+  });
+});
+
+describe("escapeHtml", () => {
+  it("escapes < and > to prevent HTML tag injection", () => {
+    expect(escapeHtml("PnL <= -2%")).toBe("PnL &lt;= -2%");
+  });
+  it("escapes ampersand", () => {
+    expect(escapeHtml("a & b")).toBe("a &amp; b");
+  });
+  it("leaves clean text unchanged", () => {
+    expect(escapeHtml("stop loss triggered")).toBe("stop loss triggered");
+  });
+  it("handles empty string", () => {
+    expect(escapeHtml("")).toBe("");
   });
 });
 
@@ -255,6 +270,23 @@ describe("formatManagementReport", () => {
     expect(msg).toContain("Rule stop_loss: hit SL");
   });
 
+  it("escapes HTML in close reason (<= stop loss)", () => {
+    const positions = [makePos()];
+    const actionMap = new Map([["pos1", { action: "CLOSE", rule: "exit", reason: "Stop loss: PnL -2.32% <= -2%" }]]);
+    const msg = formatManagementReport(positions, actionMap, defaultPortfolio);
+
+    expect(msg).toContain("Stop loss: PnL -2.32% &lt;= -2%");
+    expect(msg).not.toContain("Stop loss: PnL -2.32% <=");
+  });
+
+  it("escapes HTML in non-exit close reason", () => {
+    const positions = [makePos()];
+    const actionMap = new Map([["pos1", { action: "CLOSE", rule: 1, reason: "pnl <= stopLoss" }]]);
+    const msg = formatManagementReport(positions, actionMap, defaultPortfolio);
+
+    expect(msg).toContain("Rule 1: pnl &lt;= stopLoss");
+  });
+
   it("shows CLAIM action", () => {
     const positions = [makePos()];
     const actionMap = new Map([["pos1", { action: "CLAIM" }]]);
@@ -269,6 +301,16 @@ describe("formatManagementReport", () => {
     const msg = formatManagementReport(positions, actionMap, defaultPortfolio);
 
     expect(msg).toContain('Note: "wait for pump"');
+  });
+
+  it("escapes HTML in action summary reason", () => {
+    const positions = [makePos()];
+    const actionMap = new Map([["pos1", { action: "CLOSE", rule: "exit", reason: "PnL <= -2%" }]]);
+    const msg = formatManagementReport(positions, actionMap, defaultPortfolio);
+
+    expect(msg).toContain("Summary:");
+    expect(msg).toContain("CLOSE (PnL &lt;= -2%)");
+    expect(msg).not.toContain("CLOSE (PnL <= -2%)");
   });
 
   it("uses SOL symbols when solMode=true", () => {
@@ -515,6 +557,15 @@ describe("formatCloseNotification", () => {
       pair: "X-SOL", pnlUsd: -0.5, pnlPct: -2, reason: "stop loss",
     });
     expect(msg).toContain("Reason: stop loss");
+  });
+
+  it("escapes HTML in reason (<= stop loss)", () => {
+    const msg = formatCloseNotification({
+      pair: "Wish-SOL", pnlUsd: -1.45, pnlPct: -2.33,
+      reason: "Trailing TP: Stop loss triggered — PnL -2.32% <= -2%",
+    });
+    expect(msg).toContain("Reason: Trailing TP: Stop loss triggered — PnL -2.32% &lt;= -2%");
+    expect(msg).not.toContain("Reason: Trailing TP: Stop loss triggered — PnL -2.32% <=");
   });
 
   it("omits reason when not provided", () => {
