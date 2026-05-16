@@ -180,7 +180,7 @@ describe("notifyDeploy", () => {
     });
 
     const msg = extractSentMessage();
-    expect(msg).toContain("✅ <b>Deployed</b> SOL-USDC");
+    expect(msg).toContain("🚀 <b>Deployed</b> SOL-USDC");
     expect(msg).toContain("Amount: 2.5 SOL");
   });
 

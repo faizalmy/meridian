@@ -408,4 +408,162 @@ describe("agentLoop deploy tracking — behavioral", () => {
     expect(deployCalls).toHaveLength(1);
     expect(balanceCalls).toHaveLength(1);
   });
+
+  // ─── Scenario 11: SCREENER deploy blocked without screening tools ─
+
+  it("SCREENER deploy → blocked if screening tools not called first", async () => {
+    const { agentLoop } = await import("../../agent.js");
+
+    // LLM tries to deploy immediately without calling any screening tools
+    openaiResponseQueue = [
+      toolCall("deploy_position", { pool_address: "poolA" }),
+      finalAnswer("Deployed"),
+    ];
+
+    const toolResults = [];
+    executeToolHandler = (name) => {
+      if (name === "deploy_position") {
+        return { success: true, position: "pos_123" };
+      }
+      return { success: true };
+    };
+
+    await agentLoop("deploy to best pool", 10, [], "SCREENER");
+
+    // deploy_position should NOT have reached executeTool — blocked before execution
+    const deployCalls = executeToolCalls.filter(c => c.name === "deploy_position");
+    expect(deployCalls).toHaveLength(0);
+  });
+
+  // ─── Scenario 12: SCREENER deploy succeeds after all screening tools ─
+
+  it("SCREENER deploy → succeeds after all 5 screening tools called", async () => {
+    const { agentLoop } = await import("../../agent.js");
+
+    // LLM calls all required screening tools, then deploys
+    openaiResponseQueue = [
+      toolCall("check_smart_wallets_on_pool", { pool_address: "poolA" }),
+      toolCall("get_token_holders", { query: "mintA" }),
+      toolCall("get_token_info", { query: "mintA" }),
+      toolCall("get_token_narrative", { mint: "mintA" }),
+      toolCall("get_pool_memory", { pool_address: "poolA" }),
+      toolCall("deploy_position", { pool_address: "poolA" }),
+      finalAnswer("Deployed to Pool A"),
+    ];
+
+    executeToolHandler = (name) => {
+      if (name === "deploy_position") {
+        return { success: true, position: "pos_123", pool_name: "TOKEN-SOL" };
+      }
+      return { success: true, wallets: [], holders: 100 };
+    };
+
+    await agentLoop("deploy to best pool", 10, [], "SCREENER");
+
+    const deployCalls = executeToolCalls.filter(c => c.name === "deploy_position");
+    expect(deployCalls).toHaveLength(1);
+
+    const screeningCalls = executeToolCalls.filter(c =>
+      ["check_smart_wallets_on_pool", "get_token_holders", "get_token_info", "get_token_narrative", "get_pool_memory"].includes(c.name)
+    );
+    expect(screeningCalls).toHaveLength(5);
+  });
+
+  // ─── Scenario 13: SCREENER partial screening → blocked ─
+
+  it("SCREENER deploy → blocked if only some screening tools called", async () => {
+    const { agentLoop } = await import("../../agent.js");
+
+    // LLM calls 3 of 5 screening tools, then tries to deploy
+    openaiResponseQueue = [
+      toolCall("check_smart_wallets_on_pool", { pool_address: "poolA" }),
+      toolCall("get_token_narrative", { mint: "mintA" }),
+      toolCall("get_pool_memory", { pool_address: "poolA" }),
+      toolCall("deploy_position", { pool_address: "poolA" }),
+      finalAnswer("Deployed"),
+    ];
+
+    executeToolHandler = (name) => {
+      if (name === "deploy_position") {
+        return { success: true, position: "pos_123" };
+      }
+      return { success: true };
+    };
+
+    await agentLoop("deploy to best pool", 10, [], "SCREENER");
+
+    // deploy blocked — missing get_token_holders and get_token_info
+    // deploy_position never reached executeTool
+    const deployCalls = executeToolCalls.filter(c => c.name === "deploy_position");
+    expect(deployCalls).toHaveLength(0);
+
+    // 3 screening tools that were called should be in executeToolCalls
+    const screeningCalls = executeToolCalls.filter(c =>
+      ["check_smart_wallets_on_pool", "get_token_holders", "get_token_info", "get_token_narrative", "get_pool_memory"].includes(c.name)
+    );
+    expect(screeningCalls).toHaveLength(3);
+  });
+
+  // ─── Scenario 14: GENERAL role NOT blocked by screening guard ─
+
+  it("GENERAL deploy → NOT blocked by screening guard", async () => {
+    const { agentLoop } = await import("../../agent.js");
+
+    // LLM deploys directly without any screening tools — allowed for GENERAL
+    openaiResponseQueue = [
+      toolCall("deploy_position", { pool_address: "poolA" }),
+      finalAnswer("Deployed"),
+    ];
+
+    executeToolHandler = (name) => {
+      if (name === "deploy_position") {
+        return { success: true, position: "pos_123", pool_name: "TOKEN-SOL" };
+      }
+      return { success: true };
+    };
+
+    await agentLoop("deploy to poolA", 10, [], "GENERAL");
+
+    const deployCalls = executeToolCalls.filter(c => c.name === "deploy_position");
+    expect(deployCalls).toHaveLength(1); // deploy went through
+  });
+
+  // ─── Scenario 15: SCREENER retry after block calls missing tools ─
+
+  it("SCREENER deploy blocked → retries with missing tools → succeeds", async () => {
+    const { agentLoop } = await import("../../agent.js");
+
+    // Step 1: deploy blocked (no screening tools) — never reaches executeTool
+    // Step 2-6: LLM calls all 5 screening tools — all reach executeTool
+    // Step 7: deploy succeeds — reaches executeTool
+    openaiResponseQueue = [
+      toolCall("deploy_position", { pool_address: "poolA" }),
+      toolCall("check_smart_wallets_on_pool", { pool_address: "poolA" }),
+      toolCall("get_token_holders", { query: "mintA" }),
+      toolCall("get_token_info", { query: "mintA" }),
+      toolCall("get_token_narrative", { mint: "mintA" }),
+      toolCall("get_pool_memory", { pool_address: "poolA" }),
+      toolCall("deploy_position", { pool_address: "poolA" }),
+      finalAnswer("Deployed after full screening"),
+    ];
+
+    executeToolHandler = (name) => {
+      if (name === "deploy_position") {
+        return { success: true, position: "pos_123", pool_name: "TOKEN-SOL" };
+      }
+      return { success: true };
+    };
+
+    await agentLoop("deploy to best pool", 15, [], "SCREENER");
+
+    // deploy_position: 1st blocked before executeTool, 2nd succeeded
+    const deployCalls = executeToolCalls.filter(c => c.name === "deploy_position");
+    expect(deployCalls).toHaveLength(1);
+
+    // All 5 screening tools should have been called
+    const screeningCalls = executeToolCalls.filter(c =>
+      ["check_smart_wallets_on_pool", "get_token_holders", "get_token_info", "get_token_narrative", "get_pool_memory"].includes(c.name)
+    );
+    expect(screeningCalls).toHaveLength(5);
+  });
 });

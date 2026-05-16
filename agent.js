@@ -178,6 +178,7 @@ export async function agentLoop(goal, maxSteps = config.llm.maxSteps, sessionHis
   const MAX_DEPLOY_ATTEMPTS = 3;
   let deployAttempts = 0;
   const firedOnce = new Set();
+  const firedTools = new Set(); // tracks all tools called this session (for screening enforcement)
   const mustUseRealTool = shouldRequireRealToolUse(goal, agentType, interactive);
   let sawToolCall = false;
   let noToolRetryCount = 0;
@@ -391,6 +392,34 @@ export async function agentLoop(goal, maxSteps = config.llm.maxSteps, sessionHis
           };
         }
 
+        // Screening enforcement: SCREENER must call all data-gathering tools before deploy
+        if (functionName === "deploy_position" && agentType === "SCREENER") {
+          const REQUIRED_SCREENING_TOOLS = [
+            "check_smart_wallets_on_pool",
+            "get_token_holders",
+            "get_token_info",
+            "get_token_narrative",
+            "get_pool_memory",
+          ];
+          const missing = REQUIRED_SCREENING_TOOLS.filter(t => !firedTools.has(t));
+          if (missing.length > 0) {
+            const msg = `BLOCKED: deploy_position requires these screening tools first: ${missing.join(", ")}. Call them all, then retry deploy.`;
+            log("agent", msg);
+            await onToolFinish?.({
+              name: functionName,
+              args: functionArgs,
+              result: { blocked: true, reason: msg },
+              success: false,
+              step,
+            });
+            return {
+              role: "tool",
+              tool_call_id: toolCall.id,
+              content: JSON.stringify({ blocked: true, reason: msg }),
+            };
+          }
+        }
+
         await onToolStart?.({ name: functionName, args: functionArgs, step });
         const result = await executeTool(functionName, functionArgs);
         await onToolFinish?.({
@@ -400,6 +429,7 @@ export async function agentLoop(goal, maxSteps = config.llm.maxSteps, sessionHis
           success: result?.success !== false && !result?.error && !result?.blocked,
           step,
         });
+        firedTools.add(functionName); // track for screening enforcement
 
         // Deploy: count attempts, only lock if NOT safety-blocked (allow different pool retry)
         if (functionName === "deploy_position") {
