@@ -1593,7 +1593,7 @@ async function telegramHandler(msg) {
         ? `Range: ${fmtPct(result.range_coverage.downside_pct)} downside | ${fmtPct(result.range_coverage.upside_pct)} upside`
         : `Strategy: ${config.strategy.strategy} | binsBelow: ${binsBelow}`;
       await sendMessage([
-        `✅ Deployed ${candidate.name}`,
+        `🚀 Deployed ${candidate.name}`,
         `Pool: ${candidate.pool}`,
         `Amount: ${deployAmount} SOL`,
         coverage,

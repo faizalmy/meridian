@@ -452,7 +452,7 @@ export function notifyDeploy({ pair, amountSol, position, tx, priceRange, rangeC
       ? `Bin step: ${binStep ?? "?"}  |  Base fee: ${baseFee != null ? baseFee + "%" : "?"}\n`
       : "";
     await sendMessage(
-      `✅ <b>Deployed</b> ${pair}\n` +
+      `🚀 <b>Deployed</b> ${pair}\n` +
       `Amount: ${amountSol} SOL\n` +
       priceStr +
       coverageStr +
