@@ -566,4 +566,222 @@ describe("agentLoop deploy tracking — behavioral", () => {
     );
     expect(screeningCalls).toHaveLength(5);
   });
+
+  // ─── Scenario 16: Failed screening tool still counts ─
+
+  it("SCREENER failed screening tool still counts toward required set", async () => {
+    const { agentLoop } = await import("../../agent.js");
+
+    // get_token_holders fails, but the guard checks firedTools.has(), not result quality
+    openaiResponseQueue = [
+      toolCall("check_smart_wallets_on_pool", { pool_address: "poolA" }),
+      toolCall("get_token_holders", { query: "mintA" }),
+      toolCall("get_token_info", { query: "mintA" }),
+      toolCall("get_token_narrative", { mint: "mintA" }),
+      toolCall("get_pool_memory", { pool_address: "poolA" }),
+      toolCall("deploy_position", { pool_address: "poolA" }),
+      finalAnswer("Deployed despite RPC timeout"),
+    ];
+
+    executeToolHandler = (name, args) => {
+      if (name === "get_token_holders") {
+        return { success: false, error: "RPC timeout" };
+      }
+      if (name === "deploy_position") {
+        return { success: true, position: "pos_123" };
+      }
+      return { success: true };
+    };
+
+    await agentLoop("deploy to best pool", 15, [], "SCREENER");
+
+    // deploy reached executeTool — guard only checks firedTools.has(), not result quality
+    const deployCalls = executeToolCalls.filter(c => c.name === "deploy_position");
+    expect(deployCalls).toHaveLength(1);
+
+    const screeningCalls = executeToolCalls.filter(c =>
+      ["check_smart_wallets_on_pool", "get_token_holders", "get_token_info", "get_token_narrative", "get_pool_memory"].includes(c.name)
+    );
+    expect(screeningCalls).toHaveLength(5);
+  });
+
+  // ─── Scenario 17: 3 screening blocks don't consume deployAttempts ─
+
+  it("SCREENER 3 screening-blocked deploys don't consume deployAttempts", async () => {
+    const { agentLoop } = await import("../../agent.js");
+
+    // 3 deploy_position blocked by screening guard (before executeTool)
+    // Then 4th deploy also blocked by screening (still before executeTool)
+    // Then all 5 screening tools called, then deploy succeeds
+    openaiResponseQueue = [
+      toolCall("deploy_position", { pool_address: "poolA" }),
+      toolCall("deploy_position", { pool_address: "poolB" }),
+      toolCall("deploy_position", { pool_address: "poolC" }),
+      toolCall("deploy_position", { pool_address: "poolD" }),
+      toolCall("check_smart_wallets_on_pool", { pool_address: "poolA" }),
+      toolCall("get_token_holders", { query: "mintA" }),
+      toolCall("get_token_info", { query: "mintA" }),
+      toolCall("get_token_narrative", { mint: "mintA" }),
+      toolCall("get_pool_memory", { pool_address: "poolA" }),
+      toolCall("deploy_position", { pool_address: "poolA" }),
+      finalAnswer("Deployed after all screening"),
+    ];
+
+    executeToolHandler = (name) => {
+      if (name === "deploy_position") {
+        return { success: true, position: "pos_123" };
+      }
+      return { success: true };
+    };
+
+    await agentLoop("deploy to best pool", 20, [], "SCREENER");
+
+    // Only the last deploy_position reached executeTool — the 4 earlier ones were blocked before
+    const deployCalls = executeToolCalls.filter(c => c.name === "deploy_position");
+    expect(deployCalls).toHaveLength(1);
+
+    const screeningCalls = executeToolCalls.filter(c =>
+      ["check_smart_wallets_on_pool", "get_token_holders", "get_token_info", "get_token_narrative", "get_pool_memory"].includes(c.name)
+    );
+    expect(screeningCalls).toHaveLength(5);
+  });
+
+  // ─── Scenario 18: Safety-block after screening passes allows retry ─
+
+  it("SCREENER safety-block after screening allows retry to different pool", async () => {
+    const { agentLoop } = await import("../../agent.js");
+
+    // All 5 screening tools → deploy to poolA blocked (safety block) → deploy to poolB succeeds
+    openaiResponseQueue = [
+      toolCall("check_smart_wallets_on_pool", { pool_address: "poolA" }),
+      toolCall("get_token_holders", { query: "mintA" }),
+      toolCall("get_token_info", { query: "mintA" }),
+      toolCall("get_token_narrative", { mint: "mintA" }),
+      toolCall("get_pool_memory", { pool_address: "poolA" }),
+      toolCall("deploy_position", { pool_address: "poolA" }),
+      toolCall("deploy_position", { pool_address: "poolB" }),
+      finalAnswer("Deployed to Pool B"),
+    ];
+
+    executeToolHandler = (name, args) => {
+      if (name === "deploy_position" && args.pool_address === "poolA") {
+        return { blocked: true, reason: "TVL too low" };
+      }
+      if (name === "deploy_position" && args.pool_address === "poolB") {
+        return { success: true, position: "pos_456" };
+      }
+      return { success: true };
+    };
+
+    await agentLoop("deploy to best pool", 15, [], "SCREENER");
+
+    const deployCalls = executeToolCalls.filter(c => c.name === "deploy_position");
+    expect(deployCalls).toHaveLength(2);
+    expect(deployCalls[0].args.pool_address).toBe("poolA");
+    expect(deployCalls[1].args.pool_address).toBe("poolB");
+  });
+
+  // ─── Scenario 19: Screening tools still work after successful deploy ─
+
+  it("SCREENER tools still execute after a successful deploy", async () => {
+    const { agentLoop } = await import("../../agent.js");
+
+    // Screening tools → deploy success → get_pool_memory still works
+    openaiResponseQueue = [
+      toolCall("check_smart_wallets_on_pool", { pool_address: "poolA" }),
+      toolCall("get_token_holders", { query: "mintA" }),
+      toolCall("get_token_info", { query: "mintA" }),
+      toolCall("get_token_narrative", { mint: "mintA" }),
+      toolCall("get_pool_memory", { pool_address: "poolA" }),
+      toolCall("deploy_position", { pool_address: "poolA" }),
+      toolCall("get_pool_memory", { pool_address: "poolA" }),
+      finalAnswer("Deployed and memory refreshed"),
+    ];
+
+    executeToolHandler = (name) => {
+      if (name === "deploy_position") {
+        return { success: true, position: "pos_123" };
+      }
+      return { success: true, memory: {} };
+    };
+
+    await agentLoop("deploy to best pool", 15, [], "SCREENER");
+
+    const deployCalls = executeToolCalls.filter(c => c.name === "deploy_position");
+    expect(deployCalls).toHaveLength(1);
+
+    const getPoolMemoryCalls = executeToolCalls.filter(c => c.name === "get_pool_memory");
+    expect(getPoolMemoryCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  // ─── Scenario 20: Duplicate screening tool calls ─
+
+  it("SCREENER duplicate screening tool calls deduplicated by Set", async () => {
+    const { agentLoop } = await import("../../agent.js");
+
+    // LLM calls get_token_holders twice — Set deduplicates, deploy still succeeds
+    openaiResponseQueue = [
+      toolCall("check_smart_wallets_on_pool", { pool_address: "poolA" }),
+      toolCall("get_token_holders", { query: "mintA" }),
+      toolCall("get_token_holders", { query: "mintA" }),  // duplicate
+      toolCall("get_token_info", { query: "mintA" }),
+      toolCall("get_token_narrative", { mint: "mintA" }),
+      toolCall("get_pool_memory", { pool_address: "poolA" }),
+      toolCall("deploy_position", { pool_address: "poolA" }),
+      finalAnswer("Deployed despite duplicate"),
+    ];
+
+    executeToolHandler = (name) => {
+      if (name === "deploy_position") {
+        return { success: true, position: "pos_123" };
+      }
+      return { success: true };
+    };
+
+    await agentLoop("deploy to best pool", 15, [], "SCREENER");
+
+    const deployCalls = executeToolCalls.filter(c => c.name === "deploy_position");
+    expect(deployCalls).toHaveLength(1);
+
+    // 6 screening calls total: 5 unique + 1 duplicate get_token_holders
+    const screeningCalls = executeToolCalls.filter(c =>
+      ["check_smart_wallets_on_pool", "get_token_holders", "get_token_info", "get_token_narrative", "get_pool_memory"].includes(c.name)
+    );
+    expect(screeningCalls).toHaveLength(6);
+  });
+
+  // ─── Scenario 21: Parallel screening batch then deploy ─
+
+  it("SCREENER parallel batch of all 5 screening tools then deploy", async () => {
+    const { agentLoop } = await import("../../agent.js");
+
+    // All 5 screening tools in queue before deploy — simulates parallel fetch pattern
+    // (same as Scenario 12 but testing the batch pattern explicitly)
+    openaiResponseQueue = [
+      toolCall("check_smart_wallets_on_pool", { pool_address: "poolA" }),
+      toolCall("get_token_holders", { query: "mintA" }),
+      toolCall("get_token_info", { query: "mintA" }),
+      toolCall("get_token_narrative", { mint: "mintA" }),
+      toolCall("get_pool_memory", { pool_address: "poolA" }),
+      toolCall("deploy_position", { pool_address: "poolA" }),
+      finalAnswer("Deployed after parallel batch"),
+    ];
+
+    executeToolHandler = (name) => {
+      if (name === "deploy_position") {
+        return { success: true, position: "pos_123" };
+      }
+      return { success: true };
+    };
+
+    await agentLoop("deploy to best pool", 15, [], "SCREENER");
+
+    const deployCalls = executeToolCalls.filter(c => c.name === "deploy_position");
+    expect(deployCalls).toHaveLength(1);
+
+    const screeningCalls = executeToolCalls.filter(c =>
+      ["check_smart_wallets_on_pool", "get_token_holders", "get_token_info", "get_token_narrative", "get_pool_memory"].includes(c.name)
+    );
+    expect(screeningCalls).toHaveLength(5);
+  });
 });
