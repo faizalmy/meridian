@@ -83,6 +83,19 @@ function buildRangeBar(p, width = 10) {
   return code(bar);
 }
 
+// ─── Exit label helper ──────────────────────────────────────────
+
+function getExitLabel(reason) {
+  const r = reason || '';
+  if (/out of range/i.test(r)) return '📡 OOR:';
+  if (/stop loss/i.test(r)) return '🛑 SL:';
+  if (/trailing/i.test(r)) return '⚡ Trailing TP:';
+  if (/low yield/i.test(r)) return '📉 Low yield:';
+  if (/rule 3/i.test(r)) return '📏 Rule 3:';
+  if (/rule 4/i.test(r)) return '📏 Rule 4:';
+  return '⚡ Exit:';
+}
+
 // ─── Management Report ─────────────────────────────────────────
 
 function formatManagementReport(positions, actionMap, portfolio) {
@@ -109,18 +122,7 @@ function formatManagementReport(positions, actionMap, portfolio) {
     if (bar) line += `\n${bar}`;
 
     if (p.instruction) line += `\nNote: "${p.instruction}"`;
-    if (act.action === 'CLOSE' && act.rule === 'exit') {
-      const reason = act.reason || '';
-      let icon = '⚡';
-      if (/out of range/i.test(reason)) icon = '📡 OOR:';
-      else if (/stop loss/i.test(reason)) icon = '🛑 SL:';
-      else if (/trailing/i.test(reason)) icon = '⚡ Trailing TP:';
-      else if (/low yield/i.test(reason)) icon = '📉 Low yield:';
-      else if (/rule 3/i.test(reason)) icon = '📏 Rule 3:';
-      else if (/rule 4/i.test(reason)) icon = '📏 Rule 4:';
-      else icon = '⚡ Exit:';
-      line += `\n${icon} ${escapeHtml(reason)}`;
-    }
+    if (act.action === 'CLOSE' && act.rule === 'exit') line += `\n${getExitLabel(act.reason)} ${escapeHtml(act.reason)}`;
     if (act.action === 'CLOSE' && act.rule && act.rule !== 'exit') line += `\nRule ${act.rule}: ${escapeHtml(act.reason)}`;
     if (act.action === 'CLAIM') line += `\n→ Claiming fees`;
 
@@ -287,6 +289,7 @@ export {
 
   // Report formatters
   formatManagementReport,
+  getExitLabel,
   formatScreeningReport,
   formatDeployNotification,
   formatCloseNotification,

@@ -27,7 +27,7 @@ import {
 import { generateBriefing } from "./briefing.js";
 import { getLastBriefingDate, setLastBriefingDate, getTrackedPosition, getTrackedPositions, setPositionInstruction, updatePnlAndCheckExits, queuePeakConfirmation, resolvePendingPeak, queueTrailingDropConfirmation, resolvePendingTrailingDrop } from "./state.js";
 import { getActiveStrategy } from "./strategy-library.js";
-import { bold, escapeHtml, buildRangeBar as fmtRangeBar, formatAge, formatPct, formatScreeningReport, parseDecision } from "./telegram-formatter.js";
+import { bold, escapeHtml, buildRangeBar as fmtRangeBar, formatAge, formatPct, formatScreeningReport, parseDecision, getExitLabel } from "./telegram-formatter.js";
 import { recordPositionSnapshot, recallForPool, addPoolNote, recordScreeningRejection } from "./pool-memory.js";
 import { checkSmartWalletsOnPool } from "./smart-wallets.js";
 import { getTokenNarrative, getTokenInfo } from "./tools/token.js";
@@ -303,16 +303,7 @@ export async function runManagementCycle({ silent = false } = {}) {
       if (bar) line += `\n${bar}`;
       if (p.instruction) line += `\nNote: "${p.instruction}"`;
       if (act.action === "CLOSE" && act.rule === "exit") {
-        const reason = act.reason || '';
-        let icon = '⚡';
-        if (/out of range/i.test(reason)) icon = '📡 OOR:';
-        else if (/stop loss/i.test(reason)) icon = '🛑 SL:';
-        else if (/trailing/i.test(reason)) icon = '⚡ Trailing TP:';
-        else if (/low yield/i.test(reason)) icon = '📉 Low yield:';
-        else if (/rule 3/i.test(reason)) icon = '📏 Rule 3:';
-        else if (/rule 4/i.test(reason)) icon = '📏 Rule 4:';
-        else icon = '⚡ Exit:';
-        line += `\n${icon} ${escapeHtml(reason)}`;
+        line += `\n${getExitLabel(act.reason)} ${escapeHtml(act.reason)}`;
       }
       if (act.action === "CLOSE" && act.rule && act.rule !== "exit") line += `\nRule ${act.rule}: ${escapeHtml(act.reason)}`;
       if (act.action === "CLAIM") line += `\n→ Claiming fees`;

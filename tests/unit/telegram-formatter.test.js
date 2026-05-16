@@ -256,10 +256,11 @@ describe("formatManagementReport", () => {
 
   it("shows CLOSE with trailing TP reason", () => {
     const positions = [makePos()];
-    const actionMap = new Map([["pos1", { action: "CLOSE", rule: "exit", reason: "Trailing TP: dropped 1.5 percent" }]]);
+    const reason = "Trailing TP: peak 5.00% → current 3.50% (dropped 1.50% >= 1.5%)";
+    const actionMap = new Map([["pos1", { action: "CLOSE", rule: "exit", reason }]]);
     const msg = formatManagementReport(positions, actionMap, defaultPortfolio);
 
-    expect(msg).toContain("⚡ Trailing TP: Trailing TP: dropped 1.5 percent");
+    expect(msg).toContain("⚡ Trailing TP: Trailing TP: peak");
   });
 
   it("shows CLOSE with non-exit rule", () => {
