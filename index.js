@@ -636,7 +636,16 @@ DECISION FORMAT:
 Output ONLY a JSON decision object. Do NOT format messages or include analysis.
 
 For deploy:
-{"action":"deploy","pair":"<pool_name>","summary":"<1-line reason>"}
+{"action":"deploy","pair":"<pool_name>","summary":"<1-line reason>","confidence":"<level>"}
+
+Confidence levels (pick one):
+- very_high: exceptional signals across the board — strong organic, smart wallets, clean narrative, low risk
+- high: solid candidate with most positive indicators and manageable risk
+- medium_high: good potential but some concerns (e.g. decent narrative but no smart wallets)
+- medium: balanced — equal positive and negative signals, worth a shot
+- medium_low: passing filters but weak in several areas, speculative
+- low: risky, weak signals, only deploying because it narrowly survived screening
+- very_low: last-resort deploy, high risk but no better options
 
 For skip:
 {"action":"skip","reason":"<1-line reason>"}

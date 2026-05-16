@@ -136,10 +136,22 @@ function formatScreeningDeploy(candidates, decision, portfolio) {
 
   const { pool, sw, ti } = candidate;
 
+  const confidenceLevels = {
+    very_high: { label: 'VERY HIGH', emoji: '🟢🟢' },
+    high: { label: 'HIGH', emoji: '🟢' },
+    medium_high: { label: 'MEDIUM-HIGH', emoji: '🟡🟢' },
+    medium: { label: 'MEDIUM', emoji: '🟡' },
+    medium_low: { label: 'MEDIUM-LOW', emoji: '🟠🟡' },
+    low: { label: 'LOW', emoji: '🔴' },
+    very_low: { label: 'VERY LOW', emoji: '🔴🔴' },
+  };
+  const confKey = String(decision.confidence || 'medium').toLowerCase().replace(/\s+/g, '_');
+  const confidence = confidenceLevels[confKey] || confidenceLevels.medium;
+
   const lines = [
     `${bold('🔍 Screening Complete')}`,
     '',
-    `${bold('🚀 Deploy:')} ${pool.name} (${decision.confidence || 'medium'} confidence)`,
+    `${bold('🚀 Deploy:')} ${pool.name} — ${confidence.emoji} ${confidence.label}`,
     '━'.repeat(32),
     '',
     `${bold('💡 Summary')}`,
