@@ -151,7 +151,7 @@ function formatScreeningDeploy(candidates, decision, portfolio) {
   const candidate = candidates.find(c => c.pool.name === decision.pair);
   if (!candidate) return `${bold('🔍 Screening')} — no data available`;
 
-  const { pool, sw, ti } = candidate;
+  const { pool, sw, ti, ds } = candidate;
 
   const confidenceLevels = {
     very_high: { label: 'VERY HIGH', emoji: '🟢🟢' },
@@ -177,12 +177,37 @@ function formatScreeningDeploy(candidates, decision, portfolio) {
     `${bold('📊 Market Data')}`,
     `Token age: ${pool.token_age_hours ?? '?'}h | Holders: ${ti?.holders ?? '?'}`,
     `Smart money: ${sw?.in_pool?.length ? `${sw.in_pool.length} wallets present` : 'none'}`,
+  ];
+
+  if (ds) {
+    const buyPct = ds.ds_buy_pct_1h != null ? `${ds.ds_buy_pct_1h.toFixed(0)}%` : '?';
+    const ratio = ds.ds_buy_ratio_1h != null ? ds.ds_buy_ratio_1h.toFixed(2) : '?';
+    const buyTag = ds.ds_buy_pct_1h > 55 ? '🟢' : ds.ds_buy_pct_1h < 45 ? '🔴' : '🟡';
+    const parts = [];
+    if (ds.ds_buys_1h != null) parts.push(`${ds.ds_buys_1h} buys`);
+    if (ds.ds_sells_1h != null) parts.push(`${ds.ds_sells_1h} sells`);
+    lines.push(
+      '',
+      `${bold('📈 DexScreener (1h)')}`,
+      `${buyTag} Buy/sell: ${parts.join(' / ')} (${buyPct} buys, ratio ${ratio})`,
+    );
+    const priceParts = [];
+    if (ds.ds_price_change_5m != null) priceParts.push(`5m ${ds.ds_price_change_5m > 0 ? '+' : ''}${ds.ds_price_change_5m.toFixed(1)}%`);
+    if (ds.ds_price_change_1h != null) priceParts.push(`1h ${ds.ds_price_change_1h > 0 ? '+' : ''}${ds.ds_price_change_1h.toFixed(1)}%`);
+    if (ds.ds_price_change_6h != null) priceParts.push(`6h ${ds.ds_price_change_6h > 0 ? '+' : ''}${ds.ds_price_change_6h.toFixed(1)}%`);
+    if (ds.ds_price_change_24h != null) priceParts.push(`24h ${ds.ds_price_change_24h > 0 ? '+' : ''}${ds.ds_price_change_24h.toFixed(1)}%`);
+    if (priceParts.length) lines.push(`Price Δ: ${priceParts.join(' | ')}`);
+    if (ds.ds_liquidity_usd != null) lines.push(`Liquidity: $${ds.ds_liquidity_usd.toLocaleString()}`);
+    if (ds.ds_boosts_active) lines.push(`Boosts: ${ds.ds_boosts_active} active`);
+  }
+
+  lines.push(
     '',
     `${bold('🛡️ Risk Assessment')}`,
     `${pool.risk_level === 1 ? '🟢' : '🟡'} Risk level: ${pool.risk_level ?? '?'}`,
     `${pool.is_rugpull ? '❌' : '✅'} Rugpull: ${pool.is_rugpull ? 'YES' : 'NO'}`,
     `${pool.is_wash ? '❌' : '✅'} Wash: ${pool.is_wash ? 'YES' : 'NO'}`,
-  ];
+  );
 
   return lines.join('\n');
 }
