@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { snapshotConfig } from "./config-snapshot.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const USER_CONFIG_PATH = path.join(__dirname, "user-config.json");
@@ -207,6 +208,9 @@ export const config = {
   },
 };
 
+// Snapshot config for traceability — same config = same hash
+config._hash = snapshotConfig(config);
+
 /**
  * Compute the optimal deploy amount for a given wallet balance.
  * Scales position size with wallet growth (compounding).
@@ -277,5 +281,6 @@ export function reloadScreeningThresholds() {
       config.strategy.minBinsBelow,
       Math.min(config.strategy.maxBinsBelow, Math.round(defaultBinsBelow)),
     );
+    config._hash = snapshotConfig(config);
   } catch { /* ignore */ }
 }

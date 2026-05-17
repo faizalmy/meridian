@@ -68,6 +68,7 @@ export function trackPosition({
   organic_score,
   initial_value_usd,
   signal_snapshot = null,
+  config_hash = null,
 }) {
   const state = load();
   state.positions[position] = {
@@ -86,6 +87,7 @@ export function trackPosition({
     organic_score,
     initial_value_usd,
     signal_snapshot: signal_snapshot || null,
+    config_hash: config_hash || null,
     deployed_at: new Date().toISOString(),
     out_of_range_since: null,
     last_claim_at: null,
@@ -354,6 +356,7 @@ export function getStateSummary() {
       total_fees_claimed_usd: p.total_fees_claimed_usd,
       initial_fee_tvl_24h: p.initial_fee_tvl_24h,
       rebalance_count: p.rebalance_count,
+      config_hash: p.config_hash || null,
       instruction: p.instruction || null,
     })),
     last_updated: state.lastUpdated,

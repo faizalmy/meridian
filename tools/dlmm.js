@@ -702,6 +702,7 @@ export async function deployPosition({
           active_bin: activeBin.binId,
           initial_value_usd,
           signal_snapshot: signalSnapshot,
+          config_hash: config._hash,
         });
       }
 
@@ -840,6 +841,7 @@ export async function deployPosition({
       active_bin: activeBin.binId,
       initial_value_usd,
       signal_snapshot: signalSnapshot,
+      config_hash: config._hash,
     });
 
     appendDecision({
@@ -1699,6 +1701,7 @@ export async function closePosition({ position_address, reason }) {
           minutes_held: minutesHeld,
           close_reason: reason || "agent decision",
           signal_snapshot: signalSnapshot,
+          config_hash: tracked.config_hash || null,
         });
 
         appendDecision({
@@ -1986,6 +1989,7 @@ export async function closePosition({ position_address, reason }) {
         minutes_held: minutesHeld,
         close_reason: reason || "agent decision",
         signal_snapshot: signalSnapshot,
+        config_hash: tracked.config_hash || null,
       });
 
       appendDecision({
