@@ -10,6 +10,9 @@ node_modules/
 # User config (contains RPC URL, wallet key, API keys)
 user-config.json
 
+# Config snapshots (runtime traceability data)
+config-snapshots.json
+
 # Runtime state (position tracking, lessons — user-specific)
 state.json
 lessons.json
