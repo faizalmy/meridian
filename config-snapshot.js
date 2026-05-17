@@ -17,21 +17,21 @@ const SNAPSHOTS_FILE = path.join(__dirname, "config-snapshots.json");
 
 let _cache = null;
 
-const SENSITIVE_KEYS = new Set(["apiKey", "publicApiKey", "walletKey"]);
-
 /**
- * Deep-clone config and strip sensitive fields (API keys, wallet keys).
+ * Extract only trading-relevant config sections.
+ * Hashing and storing only what affects deployment and management decisions.
  */
-function stripSensitive(config) {
+function extractTradingConfig(config) {
   const clean = structuredClone(config);
-  for (const section of [clean.hiveMind, clean.api, clean.jupiter]) {
-    if (section && typeof section === "object") {
-      for (const key of SENSITIVE_KEYS) {
-        if (key in section) delete section[key];
-      }
-    }
-  }
-  return clean;
+  delete clean._hash;
+  // Keep only sections that affect trading behavior
+  return {
+    risk: clean.risk,
+    screening: clean.screening,
+    management: clean.management,
+    strategy: clean.strategy,
+    indicators: clean.indicators,
+  };
 }
 
 /**
@@ -59,12 +59,22 @@ function saveSnapshots(data) {
   }
 }
 
+function deepSortKeys(obj) {
+  if (obj === null || typeof obj !== "object") return obj;
+  if (Array.isArray(obj)) return obj.map(deepSortKeys);
+  const sorted = {};
+  for (const key of Object.keys(obj).sort()) {
+    sorted[key] = deepSortKeys(obj[key]);
+  }
+  return sorted;
+}
+
 /**
  * Deterministic hash of a config object.
- * Sorts keys deeply, serializes to JSON, then SHA-256 (first 12 chars).
+ * Deep-sorts all keys, serializes to JSON, then SHA-256 (first 12 chars).
  */
 function hashConfig(config) {
-  const sorted = JSON.stringify(config, Object.keys(config).sort());
+  const sorted = JSON.stringify(deepSortKeys(config));
   return createHash("sha256").update(sorted).digest("hex").slice(0, 12);
 }
 
@@ -75,7 +85,7 @@ function hashConfig(config) {
  * @returns {string} 12-char hex hash identifying this config state.
  */
 export function snapshotConfig(config) {
-  const clean = stripSensitive(config);
+  const clean = extractTradingConfig(config);
   const hash = hashConfig(clean);
   const data = loadSnapshots();
 
