@@ -36,26 +36,21 @@ function loadEnv() {
 
 function parseArgs() {
   const a = process.argv.slice(2);
-  const p = { pages: 0, pageSize: 12, orderBy: "total_pnl:desc", lastActivity: "7D", minWinRate: 0.2, minTotalLp: 500, minExpectedValue: 2, minRoi: 0, minPools: 0, dryRun: false };
+  const p = { pages: 0, pageSize: 12, orderBy: "total_pnl:desc", lastActivity: "7D", minWinRate: 0.6, minAvgMonthlyPnl: 500, minTotalLp: 100, minAvgAgeHour: 0, minExpectedValue: 2, minRoi: 0, minPools: 0, dryRun: false };
   for (let i = 0; i < a.length; i++) {
     switch (a[i]) {
-      case "--pages":       p.pages = +a[++i] || 0; break;
-      case "--page-size":   p.pageSize = +a[++i] || 12; break;
-      case "--min-roi":     p.minRoi = +a[++i] || 0; break;
-      case "--min-pools":   p.minPools = +a[++i] || 0; break;
-      case "--min-win":     p.minWinRate = +a[++i] / 100 || 0; break;
-      case "--dry-run":     p.dryRun = true; break;
+      case "--pages":              p.pages = +a[++i] || 0; break;
+      case "--page-size":          p.pageSize = +a[++i] || 12; break;
+      case "--min-roi":            p.minRoi = +a[++i] || 0; break;
+      case "--min-pools":          p.minPools = +a[++i] || 0; break;
+      case "--min-win":            p.minWinRate = +a[++i] / 100 || 0; break;
+      case "--min-avg-monthly-pnl": p.minAvgMonthlyPnl = +a[++i] || 0; break;
+      case "--min-total-lp":       p.minTotalLp = +a[++i] || 0; break;
+      case "--min-expected-value":  p.minExpectedValue = +a[++i] || 0; break;
+      case "--min-avg-age-hour":    p.minAvgAgeHour = +a[++i] || 0; break;
+      case "--dry-run":            p.dryRun = true; break;
       case "--help":
-        console.log(`
-Usage: node scripts/sync-lpagent-wallets.js [options]
-
-Options:
-  --pages <n>       Pages to fetch (default: 0 = all ~1700 wallets)
-  --min-roi <n>     Min ROI % (default: 0)
-  --min-pools <n>   Min pools traded (default: 0)
-  --min-win <n>     Min win rate % (default: 20)
-  --dry-run         Preview without saving
-`);
+        console.log(`\nUsage: node scripts/sync-lpagent-wallets.js [options]\n\nOptions:\n  --pages <n>              Pages to fetch (default: 0 = all)\n  --page-size <n>          Page size (default: 12)\n  --min-win <n>            Min win rate % (default: 60)\n  --min-avg-monthly-pnl <n> Min avg monthly PnL USD (default: 500)\n  --min-total-lp <n>       Min total LP count (default: 100)\n  --min-expected-value <n> Min expected value (default: 2)\n  --min-avg-age-hour <n>   Min avg age in hours (default: 0)\n  --min-roi <n>            Min ROI % (default: 0)\n  --min-pools <n>          Min pools traded (default: 0)\n  --dry-run                Preview without saving\n`);
         process.exit(0);
     }
   }
@@ -78,8 +73,9 @@ async function fetchPage(env, params, page) {
   const qs = new URLSearchParams({
     page: String(page), pageSize: String(params.pageSize), orderBy: params.orderBy,
     lastActivity: params.lastActivity, firstActivity: "",
-    minWinRate: String(params.minWinRate), minTotalLp: String(params.minTotalLp),
-    minAvgAgeHour: "0", minExpectedValue: String(params.minExpectedValue),
+    minWinRate: String(params.minWinRate), minAvgMonthlyPnl: String(params.minAvgMonthlyPnl),
+    minTotalLp: String(params.minTotalLp), minAvgAgeHour: String(params.minAvgAgeHour),
+    minExpectedValue: String(params.minExpectedValue),
   });
   return apiGet(`https://api.lpagent.io/api/v1/smart-lp?${qs}`, {
     accept: "application/json, text/plain, */*",
