@@ -281,16 +281,30 @@ function formatCloseNotification(data) {
 // ─── Parse LLM Decision ───────────────────────────────────────
 
 function parseDecision(text) {
-  try {
-    // Extract JSON from LLM response
-    const jsonMatch = text.match(/\{[^}]+\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
-  } catch (e) {
-    // Fallback: treat as skip
+  if (!text || typeof text !== 'string') {
+    return { action: 'skip', reason: 'Could not parse LLM decision' };
   }
-  return { action: 'skip', reason: 'Could not parse LLM decision' };
+
+  const SKIP = { action: 'skip', reason: 'Could not parse LLM decision' };
+
+  try {
+    // Strip markdown code fences
+    const cleaned = text.replace(/```(?:json)?\s*/gi, '').trim();
+
+    // Try parsing the whole cleaned text
+    try {
+      return JSON.parse(cleaned);
+    } catch (_) {}
+
+    // Extract between first { and last }
+    const first = cleaned.indexOf('{');
+    const last = cleaned.lastIndexOf('}');
+    if (first === -1 || last === -1 || last <= first) return SKIP;
+
+    return JSON.parse(cleaned.slice(first, last + 1));
+  } catch (_) {
+    return SKIP;
+  }
 }
 
 // ─── Markdown Stripping ────────────────────────────────────────

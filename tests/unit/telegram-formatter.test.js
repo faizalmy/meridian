@@ -611,6 +611,43 @@ describe("parseDecision", () => {
     expect(result.action).toBe("skip");
     expect(result.reason).toBe("low volume");
   });
+
+  it("handles markdown code fences around JSON", () => {
+    const result = parseDecision('```json\n{"action":"deploy","pair":"BONK-SOL","summary":"good metrics"}\n```');
+    expect(result.action).toBe("deploy");
+    expect(result.pair).toBe("BONK-SOL");
+  });
+
+  it("handles plain code fences without json tag", () => {
+    const result = parseDecision('```\n{"action":"skip","reason":"thin books"}\n```');
+    expect(result.action).toBe("skip");
+    expect(result.reason).toBe("thin books");
+  });
+
+  it("handles nested JSON objects", () => {
+    const result = parseDecision('My decision: {"action":"deploy","pair":"BONK-SOL","details":{"vol":5,"bins":12},"summary":"ok"}');
+    expect(result.action).toBe("deploy");
+    expect(result.pair).toBe("BONK-SOL");
+  });
+
+  it("handles JSON with escaped strings inside", () => {
+    const result = parseDecision('{"action":"skip","reason":"price dropped to $0.001"}');
+    expect(result.action).toBe("skip");
+  });
+
+  it("handles multiline LLM response with JSON", () => {
+    const input = `I analyzed the candidates and here is my decision:
+{"action":"deploy","pair":"WIF-SOL","summary":"strong whale activity"}
+Deploying now.`;
+    const result = parseDecision(input);
+    expect(result.action).toBe("deploy");
+    expect(result.pair).toBe("WIF-SOL");
+  });
+
+  it("returns skip for null/undefined input", () => {
+    expect(parseDecision(null).action).toBe("skip");
+    expect(parseDecision(undefined).action).toBe("skip");
+  });
 });
 
 // ─── stripMarkdown ──────────────────────────────────────────────
