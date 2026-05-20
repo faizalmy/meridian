@@ -801,6 +801,9 @@ Do NOT include:
         },
       });
     
+    // Log raw LLM output for debugging parse failures
+    log("screening", `LLM raw output (${content?.length ?? 0} chars): ${(content ?? "").substring(0, 1000)}`);
+
     // Parse LLM decision and build formatted report
     const decision = parseDecision(content);
     log("screening", `LLM decision: ${JSON.stringify(decision)}`);
