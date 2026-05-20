@@ -98,6 +98,7 @@ export const config = {
     autoSwapAfterClaim:    u.autoSwapAfterClaim    ?? false,
     outOfRangeBinsToClose: u.outOfRangeBinsToClose ?? 10,
     outOfRangeWaitMinutes: u.outOfRangeWaitMinutes ?? 30,
+    outOfRangeBelowWaitMinutes: u.outOfRangeBelowWaitMinutes ?? 30,
     oorCooldownTriggerCount: u.oorCooldownTriggerCount ?? 3,
     oorCooldownHours:       u.oorCooldownHours       ?? 12,
     repeatDeployCooldownEnabled: u.repeatDeployCooldownEnabled ?? true,
@@ -159,6 +160,15 @@ export const config = {
     weightFloor:    u.darwinFloor       ?? 0.3,
     weightCeiling:  u.darwinCeiling     ?? 2.5,
     minSamples:     u.darwinMinSamples  ?? 10,
+  },
+
+  // ─── Market Regime Awareness ───────────
+  marketRegime: {
+    enabled: u.marketRegimeEnabled ?? false,
+    bearishThreshold: u.bearishThreshold ?? -5,        // SOL 24h drop % to reduce position size
+    extremeBearishThreshold: u.extremeBearishThreshold ?? -10, // SOL 24h drop % to pause deployments
+    reducePositionSizePct: u.reducePositionSizePct ?? 0.5,     // multiply deploy amount by this when bearish
+    solPriceCacheTtlMs: u.solPriceCacheTtlMs ?? 300000,        // 5 min cache for CoinGecko price
   },
 
   // ─── Common Token Mints ────────────────

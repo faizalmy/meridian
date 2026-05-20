@@ -198,6 +198,65 @@ function stopCronJobs() {
   _cronTasks = [];
 }
 
+// ═══════════════════════════════════════════
+//  MARKET REGIME AWARENESS
+// ═══════════════════════════════════════════
+let _solPriceCache = null;
+let _solPriceCacheTime = 0;
+
+/**
+ * Fetch SOL 24h price change from CoinGecko.
+ * Returns { change24h: number|null, regime: "NORMAL"|"BEARISH"|"EXTREME_BEARISH", error?: string }
+ * Caches result for solPriceCacheTtlMs (default 5 min) to avoid rate limits.
+ * On API failure, defaults to NORMAL (fail-open).
+ */
+export async function checkMarketRegime() {
+  const cfg = config.marketRegime;
+  if (!cfg?.enabled) {
+    return { change24h: null, regime: "NORMAL", reason: "disabled" };
+  }
+
+  const now = Date.now();
+  if (_solPriceCache && now - _solPriceCacheTime < cfg.solPriceCacheTtlMs) {
+    return _solPriceCache;
+  }
+
+  try {
+    const resp = await fetch(
+      "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd&include_24hr_change=true",
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    const change24h = data?.solana?.usd_24h_change ?? null;
+
+    if (change24h == null) {
+      const result = { change24h: null, regime: "NORMAL", reason: "no_change_data" };
+      _solPriceCache = result;
+      _solPriceCacheTime = now;
+      return result;
+    }
+
+    let regime = "NORMAL";
+    if (change24h <= cfg.extremeBearishThreshold) {
+      regime = "EXTREME_BEARISH";
+    } else if (change24h <= cfg.bearishThreshold) {
+      regime = "BEARISH";
+    }
+
+    const result = { change24h: parseFloat(change24h.toFixed(2)), regime };
+    _solPriceCache = result;
+    _solPriceCacheTime = now;
+    return result;
+  } catch (e) {
+    log("cron_warn", `Market regime check failed (defaulting to NORMAL): ${e.message}`);
+    const result = { change24h: null, regime: "NORMAL", reason: `api_error: ${e.message}` };
+    _solPriceCache = result;
+    _solPriceCacheTime = now;
+    return result;
+  }
+}
+
 export async function runManagementCycle({ silent = false } = {}) {
   if (_managementBusy) return null;
   _managementBusy = true;
@@ -441,6 +500,22 @@ export async function runScreeningCycle({ silent = false } = {}) {
     _screeningBusy = false;
     return screenReport;
   }
+
+  // Market regime check — pause/reduce deployments during SOL drops
+  const marketRegime = await checkMarketRegime();
+  if (marketRegime.regime === "EXTREME_BEARISH") {
+    log("cron", `Screening skipped — extreme bearish market (SOL 24h: ${marketRegime.change24h ?? "?"}%)`);
+    screenReport = `Screening skipped — extreme bearish market (SOL 24h: ${marketRegime.change24h ?? "?"}%). Pausing deployments.`;
+    appendDecision({
+      type: "skip",
+      actor: "SCREENER",
+      summary: "Screening skipped",
+      reason: `Extreme bearish market (SOL 24h: ${marketRegime.change24h ?? "?"}%)`,
+    });
+    _screeningBusy = false;
+    return screenReport;
+  }
+
   if (!silent && telegramEnabled()) {
     liveMessage = await createLiveMessage("🔍 Screening Cycle", "Scanning candidates...");
   }
@@ -449,7 +524,13 @@ export async function runScreeningCycle({ silent = false } = {}) {
   try {
     // Reuse pre-fetched balance — no extra RPC call needed
     const currentBalance = preBalance;
-    const deployAmount = computeDeployAmount(currentBalance.sol);
+    let deployAmount = computeDeployAmount(currentBalance.sol);
+    // Reduce deploy size during bearish market
+    if (marketRegime.regime === "BEARISH") {
+      const reducePct = config.marketRegime.reducePositionSizePct ?? 0.5;
+      deployAmount = parseFloat((deployAmount * reducePct).toFixed(2));
+      log("cron", `Bearish regime — reduced deploy amount by ${reducePct * 100}% → ${deployAmount} SOL`);
+    }
     log("cron", `Computed deploy amount: ${deployAmount} SOL (wallet: ${currentBalance.sol} SOL)`);
 
     // Load active strategy
@@ -947,7 +1028,7 @@ function formatCandidates(candidates) {
   ].join("\n");
 }
 
-function getDeterministicCloseRule(position, managementConfig) {
+export function getDeterministicCloseRule(position, managementConfig) {
   const tracked = getTrackedPosition(position.position);
   const pnlSuspect = (() => {
     if (position.pnl_pct == null) return false;
@@ -986,6 +1067,15 @@ function getDeterministicCloseRule(position, managementConfig) {
     (position.age_minutes ?? 0) >= (managementConfig.minAgeBeforeYieldCheck ?? 60)
   ) {
     return { action: "CLOSE", rule: 5, reason: "low yield" };
+  }
+  // Rule 6: OOR below — price dropped below lower_bin
+  if (
+    position.active_bin != null &&
+    position.lower_bin != null &&
+    position.active_bin < position.lower_bin &&
+    (position.minutes_out_of_range ?? 0) >= (managementConfig.outOfRangeBelowWaitMinutes ?? 30)
+  ) {
+    return { action: "CLOSE", rule: 6, reason: "OOR below" };
   }
   return null;
 }
