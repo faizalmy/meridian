@@ -1702,6 +1702,8 @@ export async function closePosition({ position_address, reason }) {
           close_reason: reason || "agent decision",
           signal_snapshot: signalSnapshot,
           config_hash: tracked.config_hash || null,
+          peak_pnl_pct: tracked.peak_pnl_pct ?? 0,
+          lowest_pnl_pct: tracked.lowest_pnl_pct ?? 0,
         });
 
         appendDecision({
@@ -1990,6 +1992,8 @@ export async function closePosition({ position_address, reason }) {
         close_reason: reason || "agent decision",
         signal_snapshot: signalSnapshot,
         config_hash: tracked.config_hash || null,
+        peak_pnl_pct: tracked.peak_pnl_pct ?? 0,
+        lowest_pnl_pct: tracked.lowest_pnl_pct ?? 0,
       });
 
       appendDecision({
