@@ -8,6 +8,7 @@
 import fs from "fs";
 import { log } from "./logger.js";
 import { config } from "./config.js";
+import { normalizeCloseReason } from "./close-reason.js";
 
 const POOL_MEMORY_FILE = "./pool-memory.json";
 const MAX_NOTE_LENGTH = 280;
@@ -37,16 +38,13 @@ function save(data) {
 }
 
 function isOorCloseReason(reason) {
-  const text = String(reason || "").trim().toLowerCase();
-  return text === "oor" || text.includes("out of range") || text.includes("oor");
+  const cat = normalizeCloseReason(reason);
+  return cat === "oor" || cat === "oor_above" || cat === "oor_below";
 }
 
 function isAdjustedWinRateExcludedReason(reason) {
-  const text = String(reason || "").trim().toLowerCase();
-  return text.includes("out of range") ||
-    text.includes("pumped far above range") ||
-    text === "oor" ||
-    text.includes("oor");
+  const cat = normalizeCloseReason(reason);
+  return cat === "oor" || cat === "oor_above" || cat === "oor_below";
 }
 
 function isFeeGeneratingDeploy(deploy) {
@@ -162,7 +160,7 @@ export function recordPoolDeploy(poolAddress, deployData) {
   }
 
   // Set cooldown for low yield closes — pool wasn't profitable enough, don't redeploy soon
-  if (deploy.close_reason === "low yield") {
+  if (normalizeCloseReason(deploy.close_reason) === "low_yield") {
     const cooldownHours = 4;
     const cooldownUntil = setPoolCooldown(entry, cooldownHours, "low yield");
     log("pool-memory", `Cooldown set for ${entry.name} until ${cooldownUntil} (low yield close)`);

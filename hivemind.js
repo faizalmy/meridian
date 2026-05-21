@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { log } from "./logger.js";
 import { config } from "./config.js";
+import { normalizeCloseReason } from "./close-reason.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const USER_CONFIG_PATH = path.join(__dirname, "user-config.json");
@@ -305,13 +306,9 @@ export async function pushHiveLesson(lesson) {
 }
 
 function shouldCountInAdjustedWinRate(closeReason) {
-  const text = String(closeReason || "").toLowerCase();
-  return !(
-    text.includes("out of range") ||
-    text.includes("pumped far above range") ||
-    text === "oor" ||
-    text.includes("oor")
-  );
+  const cat = normalizeCloseReason(closeReason);
+  // OOR exits (above, below, generic) don't count — position was misranged
+  return cat !== "oor" && cat !== "oor_above" && cat !== "oor_below";
 }
 
 export async function pushHivePerformanceEvent(perf) {

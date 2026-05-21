@@ -24,6 +24,7 @@ import {
   syncOpenPositions,
 } from "../state.js";
 import { recordPerformance } from "../lessons.js";
+import { normalizeCloseReason } from "../close-reason.js";
 import { isBaseMintOnCooldown, isPoolOnCooldown } from "../pool-memory.js";
 import { normalizeMint } from "./wallet.js";
 import { appendDecision } from "../decision-log.js";
@@ -1894,11 +1895,9 @@ export async function closePosition({ position_address, reason }) {
 
       const shouldRejectClosedPnl = (pct, closeReasonText) => {
         if (!Number.isFinite(pct)) return false;
-        const reasonText = String(closeReasonText || "").toLowerCase();
-        const stopLossTriggered = reasonText.includes("stop loss");
-        // Meteora sometimes briefly reports absurd closed pnl while the record is settling.
+        const cat = normalizeCloseReason(closeReasonText);
         // Trust legitimate stop-loss disasters, but reject obviously unsettled outliers otherwise.
-        return !stopLossTriggered && pct <= -90;
+        return cat !== "stop_loss" && pct <= -90;
       };
 
       // Fetch closed PnL from API — authoritative source after withdrawal settles

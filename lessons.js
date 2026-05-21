@@ -8,6 +8,7 @@
 
 import fs from "fs";
 import path from "path";
+import { normalizeCloseReason } from "./close-reason.js";
 import { fileURLToPath } from "url";
 import { log } from "./logger.js";
 import { getSharedLessonsForPrompt, pushHiveLesson, pushHivePerformanceEvent } from "./hivemind.js";
@@ -121,11 +122,12 @@ export async function recordPerformance(perf) {
     : 0;
 
   const closeReasonText = String(perf.close_reason || "").toLowerCase();
+  const closeCategory = normalizeCloseReason(perf.close_reason);
   const suspiciousAbsurdClosedPnl =
     Number.isFinite(pnl_pct) &&
     perf.initial_value_usd >= 20 &&
     pnl_pct <= -90 &&
-    !closeReasonText.includes("stop loss");
+    closeCategory !== "stop_loss";
 
   if (suspiciousAbsurdClosedPnl) {
     log("lessons_warn", `Skipped absurd closed PnL record for ${perf.pool_name || perf.pool}: pnl_pct=${pnl_pct.toFixed(2)} reason=${perf.close_reason}`);
@@ -135,6 +137,7 @@ export async function recordPerformance(perf) {
   const signalSnapshot = buildSignalSnapshot(perf);
   const entry = {
     ...perf,
+    close_reason_category: normalizeCloseReason(perf.close_reason),
     signal_snapshot: signalSnapshot,
     pnl_usd: Math.round(pnl_usd * 100) / 100,
     pnl_pct: Math.round(pnl_pct * 100) / 100,
@@ -259,6 +262,7 @@ function derivLesson(perf) {
   if (!rule) return null;
 
   const closeReasonText = String(perf.close_reason || "").toLowerCase();
+  const closeCategory = normalizeCloseReason(perf.close_reason);
   const positiveEvidence =
     feeYieldPct >= 1 ||
     (perf.fees_earned_usd || 0) >= 3 ||
@@ -266,10 +270,10 @@ function derivLesson(perf) {
   const negativeEvidence =
     perf.pnl_pct <= -5 ||
     perf.range_efficiency <= 30 ||
-    closeReasonText.includes("out of range") ||
-    closeReasonText.includes("oor") ||
-    closeReasonText.includes("low yield") ||
-    closeReasonText.includes("volume");
+    closeCategory === "oor" ||
+    closeCategory === "oor_above" ||
+    closeCategory === "oor_below" ||
+    closeCategory === "low_yield";
 
   let confidence = 0.35;
   if (outcome === "good") {
