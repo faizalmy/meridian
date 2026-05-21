@@ -590,10 +590,39 @@ describe("parseDecision", () => {
     expect(result.pair).toBe("BONK-SOL");
   });
 
-  it("returns skip for unparseable text", () => {
+  it("infers skip from analysis text without JSON", () => {
     const result = parseDecision("I have no idea what to do");
     expect(result.action).toBe("skip");
-    expect(result.reason).toContain("Could not parse");
+    expect(result.reason).toBe("I have no idea what to do");
+  });
+
+  it("infers deploy from text mentioning deployment", () => {
+    const result = parseDecision("Deployment successful. Position opened at bin range [-553, -502] with 0.8 SOL.");
+    expect(result.action).toBe("deploy");
+    expect(result.summary).toContain("Deployment successful");
+  });
+
+  it("infers deploy from text with 'deployed'", () => {
+    const result = parseDecision("Deployed 0.8 SOL spot at 60 bins below active bin — AI narrative, clean audit.");
+    expect(result.action).toBe("deploy");
+  });
+
+  it("infers skip from text with failure keywords", () => {
+    const result = parseDecision("Based on analysis, this pool fails to meet deployment standards. Zero narrative, zero smart wallets.");
+    expect(result.action).toBe("skip");
+    expect(result.reason).toContain("fails");
+  });
+
+  it("infers skip from text with 'reject'", () => {
+    const result = parseDecision("Candidate rejected: high bot holders percentage and low volume.");
+    expect(result.action).toBe("skip");
+    expect(result.reason).toContain("rejected");
+  });
+
+  it("infers skip from analysis text without clear keywords", () => {
+    const result = parseDecision("**DEGEN-SOL Final Assessment:**\n- Smart wallets: 0/12 — absent\n- Narrative: none\n- Pool memory: avg PnL -1.16%");
+    expect(result.action).toBe("skip");
+    expect(result.reason).toContain("DEGEN-SOL");
   });
 
   it("returns skip for empty string", () => {

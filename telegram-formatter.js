@@ -299,12 +299,42 @@ function parseDecision(text) {
     // Extract between first { and last }
     const first = cleaned.indexOf('{');
     const last = cleaned.lastIndexOf('}');
-    if (first === -1 || last === -1 || last <= first) return SKIP;
+    if (first !== -1 && last !== -1 && last > first) {
+      try {
+        return JSON.parse(cleaned.slice(first, last + 1));
+      } catch (_) {}
+    }
 
-    return JSON.parse(cleaned.slice(first, last + 1));
+    // No JSON found — infer decision from text keywords (deepseek non-compliance fallback)
+    return inferDecisionFromText(cleaned);
   } catch (_) {
     return SKIP;
   }
+}
+
+/**
+ * Infer LLM decision from free-form text when no JSON is present.
+ * Handles deepseek-v4-flash non-compliance: outputs analysis text without JSON.
+ * Deploy indicators are checked first (conservative — only infer deploy on clear signals).
+ * Default fallback is skip (safer than deploying without structured decision).
+ */
+function inferDecisionFromText(text) {
+  const lower = text.toLowerCase();
+
+  // Deploy indicators — LLM successfully deployed but forgot JSON
+  // Must be specific: "deployed", "deploying", "position opened", NOT just "deployment" in context like "deployment standards"
+  if (/\b(deploy(?:ed|ing)|position opened|successfully (?:opened|created|added))\b/i.test(lower)) {
+    return { action: 'deploy', summary: text.slice(0, 200) };
+  }
+
+  // Skip indicators — LLM analyzed and found issues
+  if (/\b(skip|fail(?:s|ed|ing)?|reject(?:ed|ing)?|no deploy|not (?:worth|eligible)|does? not meet|insufficient|avoid)\b/i.test(lower)) {
+    return { action: 'skip', reason: text.slice(0, 200) };
+  }
+
+  // Default: LLM wrote analysis text without clear decision — treat as skip
+  // (safer than deploying without structured JSON)
+  return { action: 'skip', reason: text.slice(0, 200) };
 }
 
 // ─── Markdown Stripping ────────────────────────────────────────
