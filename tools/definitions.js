@@ -298,6 +298,26 @@ WARNING: This executes a real on-chain transaction. Cannot be undone.`,
     }
   },
 
+  // ═══════════════════════════════════════════
+  //  GMGN EXIT SIGNAL TOOL
+  // ═══════════════════════════════════════════
+  {
+    type: "function",
+    function: {
+      name: "check_gmgn_exit_signal",
+      description: `Check if smart money is exiting a token. Returns exit signal status and number of wallets selling.
+Use during management cycles to detect when multiple smart money wallets are full-closing a position's token.
+This is advisory only — it flags positions for human review, does NOT auto-close.`,
+      parameters: {
+        type: "object",
+        properties: {
+          mint: { type: "string", description: "Token mint address to check for smart money exit signals" }
+        },
+        required: ["mint"]
+      }
+    }
+  },
+
   {
     type: "function",
     function: {
@@ -505,6 +525,24 @@ If no smart wallets are present, rely on fundamentals (fees, volume, organic sco
           pool_address: { type: "string", description: "Pool address to check" }
         },
         required: ["pool_address"]
+      }
+    }
+  },
+
+  {
+    type: "function",
+    function: {
+      name: "check_gmgn_signals",
+      description: `Check smart money and KOL trading activity for a token via GMGN Track data.
+Returns buy/sell counts from smart money wallets, KOL buy counts, cluster signal strength, and recent trades.
+Use this during screening to gauge real-money conviction — if smart money is buying, it's a strong positive signal.
+If the GMGN cache is empty or stale, the tool returns zeroed data (fail-open) — continue screening normally.`,
+      parameters: {
+        type: "object",
+        properties: {
+          mint: { type: "string", description: "Token mint address to check" }
+        },
+        required: ["mint"]
       }
     }
   },

@@ -437,7 +437,7 @@ describe("agentLoop deploy tracking — behavioral", () => {
 
   // ─── Scenario 12: SCREENER deploy succeeds after all screening tools ─
 
-  it("SCREENER deploy → succeeds after all 5 screening tools called", async () => {
+  it("SCREENER deploy → succeeds after all 6 screening tools called", async () => {
     const { agentLoop } = await import("../../agent.js");
 
     // LLM calls all required screening tools, then deploys
@@ -447,6 +447,7 @@ describe("agentLoop deploy tracking — behavioral", () => {
       toolCall("get_token_info", { query: "mintA" }),
       toolCall("get_token_narrative", { mint: "mintA" }),
       toolCall("get_pool_memory", { pool_address: "poolA" }),
+      toolCall("check_gmgn_signals", { mint: "mintA" }),
       toolCall("deploy_position", { pool_address: "poolA" }),
       finalAnswer("Deployed to Pool A"),
     ];
@@ -464,9 +465,9 @@ describe("agentLoop deploy tracking — behavioral", () => {
     expect(deployCalls).toHaveLength(1);
 
     const screeningCalls = executeToolCalls.filter(c =>
-      ["check_smart_wallets_on_pool", "get_token_holders", "get_token_info", "get_token_narrative", "get_pool_memory"].includes(c.name)
+      ["check_smart_wallets_on_pool", "get_token_holders", "get_token_info", "get_token_narrative", "get_pool_memory", "check_gmgn_signals"].includes(c.name)
     );
-    expect(screeningCalls).toHaveLength(5);
+    expect(screeningCalls).toHaveLength(6);
   });
 
   // ─── Scenario 13: SCREENER partial screening → blocked ─
@@ -474,11 +475,12 @@ describe("agentLoop deploy tracking — behavioral", () => {
   it("SCREENER deploy → blocked if only some screening tools called", async () => {
     const { agentLoop } = await import("../../agent.js");
 
-    // LLM calls 3 of 5 screening tools, then tries to deploy
+    // LLM calls 4 of 6 screening tools, then tries to deploy
     openaiResponseQueue = [
       toolCall("check_smart_wallets_on_pool", { pool_address: "poolA" }),
       toolCall("get_token_narrative", { mint: "mintA" }),
       toolCall("get_pool_memory", { pool_address: "poolA" }),
+      toolCall("check_gmgn_signals", { mint: "mintA" }),
       toolCall("deploy_position", { pool_address: "poolA" }),
       finalAnswer("Deployed"),
     ];
@@ -497,11 +499,11 @@ describe("agentLoop deploy tracking — behavioral", () => {
     const deployCalls = executeToolCalls.filter(c => c.name === "deploy_position");
     expect(deployCalls).toHaveLength(0);
 
-    // 3 screening tools that were called should be in executeToolCalls
+    // 4 screening tools that were called should be in executeToolCalls
     const screeningCalls = executeToolCalls.filter(c =>
-      ["check_smart_wallets_on_pool", "get_token_holders", "get_token_info", "get_token_narrative", "get_pool_memory"].includes(c.name)
+      ["check_smart_wallets_on_pool", "get_token_holders", "get_token_info", "get_token_narrative", "get_pool_memory", "check_gmgn_signals"].includes(c.name)
     );
-    expect(screeningCalls).toHaveLength(3);
+    expect(screeningCalls).toHaveLength(4);
   });
 
   // ─── Scenario 14: GENERAL role NOT blocked by screening guard ─
@@ -534,7 +536,7 @@ describe("agentLoop deploy tracking — behavioral", () => {
     const { agentLoop } = await import("../../agent.js");
 
     // Step 1: deploy blocked (no screening tools) — never reaches executeTool
-    // Step 2-6: LLM calls all 5 screening tools — all reach executeTool
+    // Step 2-6: LLM calls all 6 screening tools — all reach executeTool
     // Step 7: deploy succeeds — reaches executeTool
     openaiResponseQueue = [
       toolCall("deploy_position", { pool_address: "poolA" }),
@@ -543,6 +545,7 @@ describe("agentLoop deploy tracking — behavioral", () => {
       toolCall("get_token_info", { query: "mintA" }),
       toolCall("get_token_narrative", { mint: "mintA" }),
       toolCall("get_pool_memory", { pool_address: "poolA" }),
+      toolCall("check_gmgn_signals", { mint: "mintA" }),
       toolCall("deploy_position", { pool_address: "poolA" }),
       finalAnswer("Deployed after full screening"),
     ];
@@ -562,9 +565,9 @@ describe("agentLoop deploy tracking — behavioral", () => {
 
     // All 5 screening tools should have been called
     const screeningCalls = executeToolCalls.filter(c =>
-      ["check_smart_wallets_on_pool", "get_token_holders", "get_token_info", "get_token_narrative", "get_pool_memory"].includes(c.name)
+      ["check_smart_wallets_on_pool", "get_token_holders", "get_token_info", "get_token_narrative", "get_pool_memory", "check_gmgn_signals"].includes(c.name)
     );
-    expect(screeningCalls).toHaveLength(5);
+    expect(screeningCalls).toHaveLength(6);
   });
 
   // ─── Scenario 16: Failed screening tool still counts ─
@@ -579,6 +582,7 @@ describe("agentLoop deploy tracking — behavioral", () => {
       toolCall("get_token_info", { query: "mintA" }),
       toolCall("get_token_narrative", { mint: "mintA" }),
       toolCall("get_pool_memory", { pool_address: "poolA" }),
+      toolCall("check_gmgn_signals", { mint: "mintA" }),
       toolCall("deploy_position", { pool_address: "poolA" }),
       finalAnswer("Deployed despite RPC timeout"),
     ];
@@ -600,9 +604,9 @@ describe("agentLoop deploy tracking — behavioral", () => {
     expect(deployCalls).toHaveLength(1);
 
     const screeningCalls = executeToolCalls.filter(c =>
-      ["check_smart_wallets_on_pool", "get_token_holders", "get_token_info", "get_token_narrative", "get_pool_memory"].includes(c.name)
+      ["check_smart_wallets_on_pool", "get_token_holders", "get_token_info", "get_token_narrative", "get_pool_memory", "check_gmgn_signals"].includes(c.name)
     );
-    expect(screeningCalls).toHaveLength(5);
+    expect(screeningCalls).toHaveLength(6);
   });
 
   // ─── Scenario 17: 3 screening blocks don't consume deployAttempts ─
@@ -612,7 +616,7 @@ describe("agentLoop deploy tracking — behavioral", () => {
 
     // 3 deploy_position blocked by screening guard (before executeTool)
     // Then 4th deploy also blocked by screening (still before executeTool)
-    // Then all 5 screening tools called, then deploy succeeds
+    // Then all 6 screening tools called, then deploy succeeds
     openaiResponseQueue = [
       toolCall("deploy_position", { pool_address: "poolA" }),
       toolCall("deploy_position", { pool_address: "poolB" }),
@@ -623,6 +627,7 @@ describe("agentLoop deploy tracking — behavioral", () => {
       toolCall("get_token_info", { query: "mintA" }),
       toolCall("get_token_narrative", { mint: "mintA" }),
       toolCall("get_pool_memory", { pool_address: "poolA" }),
+      toolCall("check_gmgn_signals", { mint: "mintA" }),
       toolCall("deploy_position", { pool_address: "poolA" }),
       finalAnswer("Deployed after all screening"),
     ];
@@ -641,9 +646,9 @@ describe("agentLoop deploy tracking — behavioral", () => {
     expect(deployCalls).toHaveLength(1);
 
     const screeningCalls = executeToolCalls.filter(c =>
-      ["check_smart_wallets_on_pool", "get_token_holders", "get_token_info", "get_token_narrative", "get_pool_memory"].includes(c.name)
+      ["check_smart_wallets_on_pool", "get_token_holders", "get_token_info", "get_token_narrative", "get_pool_memory", "check_gmgn_signals"].includes(c.name)
     );
-    expect(screeningCalls).toHaveLength(5);
+    expect(screeningCalls).toHaveLength(6);
   });
 
   // ─── Scenario 18: Safety-block after screening passes allows retry ─
@@ -658,6 +663,7 @@ describe("agentLoop deploy tracking — behavioral", () => {
       toolCall("get_token_info", { query: "mintA" }),
       toolCall("get_token_narrative", { mint: "mintA" }),
       toolCall("get_pool_memory", { pool_address: "poolA" }),
+      toolCall("check_gmgn_signals", { mint: "mintA" }),
       toolCall("deploy_position", { pool_address: "poolA" }),
       toolCall("deploy_position", { pool_address: "poolB" }),
       finalAnswer("Deployed to Pool B"),
@@ -693,6 +699,7 @@ describe("agentLoop deploy tracking — behavioral", () => {
       toolCall("get_token_info", { query: "mintA" }),
       toolCall("get_token_narrative", { mint: "mintA" }),
       toolCall("get_pool_memory", { pool_address: "poolA" }),
+      toolCall("check_gmgn_signals", { mint: "mintA" }),
       toolCall("deploy_position", { pool_address: "poolA" }),
       toolCall("get_pool_memory", { pool_address: "poolA" }),
       finalAnswer("Deployed and memory refreshed"),
@@ -727,6 +734,7 @@ describe("agentLoop deploy tracking — behavioral", () => {
       toolCall("get_token_info", { query: "mintA" }),
       toolCall("get_token_narrative", { mint: "mintA" }),
       toolCall("get_pool_memory", { pool_address: "poolA" }),
+      toolCall("check_gmgn_signals", { mint: "mintA" }),
       toolCall("deploy_position", { pool_address: "poolA" }),
       finalAnswer("Deployed despite duplicate"),
     ];
@@ -743,16 +751,16 @@ describe("agentLoop deploy tracking — behavioral", () => {
     const deployCalls = executeToolCalls.filter(c => c.name === "deploy_position");
     expect(deployCalls).toHaveLength(1);
 
-    // 6 screening calls total: 5 unique + 1 duplicate get_token_holders
+    // 7 screening calls total: 6 unique + 1 duplicate get_token_holders
     const screeningCalls = executeToolCalls.filter(c =>
-      ["check_smart_wallets_on_pool", "get_token_holders", "get_token_info", "get_token_narrative", "get_pool_memory"].includes(c.name)
+      ["check_smart_wallets_on_pool", "get_token_holders", "get_token_info", "get_token_narrative", "get_pool_memory", "check_gmgn_signals"].includes(c.name)
     );
-    expect(screeningCalls).toHaveLength(6);
+    expect(screeningCalls).toHaveLength(7);
   });
 
   // ─── Scenario 21: Parallel screening batch then deploy ─
 
-  it("SCREENER parallel batch of all 5 screening tools then deploy", async () => {
+  it("SCREENER parallel batch of all 6 screening tools then deploy", async () => {
     const { agentLoop } = await import("../../agent.js");
 
     // All 5 screening tools in queue before deploy — simulates parallel fetch pattern
@@ -763,6 +771,7 @@ describe("agentLoop deploy tracking — behavioral", () => {
       toolCall("get_token_info", { query: "mintA" }),
       toolCall("get_token_narrative", { mint: "mintA" }),
       toolCall("get_pool_memory", { pool_address: "poolA" }),
+      toolCall("check_gmgn_signals", { mint: "mintA" }),
       toolCall("deploy_position", { pool_address: "poolA" }),
       finalAnswer("Deployed after parallel batch"),
     ];
@@ -780,8 +789,8 @@ describe("agentLoop deploy tracking — behavioral", () => {
     expect(deployCalls).toHaveLength(1);
 
     const screeningCalls = executeToolCalls.filter(c =>
-      ["check_smart_wallets_on_pool", "get_token_holders", "get_token_info", "get_token_narrative", "get_pool_memory"].includes(c.name)
+      ["check_smart_wallets_on_pool", "get_token_holders", "get_token_info", "get_token_narrative", "get_pool_memory", "check_gmgn_signals"].includes(c.name)
     );
-    expect(screeningCalls).toHaveLength(5);
+    expect(screeningCalls).toHaveLength(6);
   });
 });

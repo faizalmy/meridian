@@ -32,6 +32,7 @@ import { recordPositionSnapshot, recallForPool, addPoolNote, recordScreeningReje
 import { checkSmartWalletsOnPool } from "./smart-wallets.js";
 import { getTokenNarrative, getTokenInfo } from "./tools/token.js";
 import { getDexScreenerBatch, extractPairMetrics, formatTrendingForPrompt } from "./tools/dexscreener.js";
+import { checkGmgnSignals } from "./tools/gmgn.js";
 import { stageSignals } from "./signal-tracker.js";
 import { getWeightsSummary } from "./signal-weights.js";
 import { bootstrapHiveMind, ensureAgentId, getHiveMindPullMode, isHiveMindEnabled, pullHiveMindLessons, pullHiveMindPresets, registerHiveMindAgent, startHiveMindBackgroundSync } from "./hivemind.js";
@@ -556,10 +557,11 @@ export async function runScreeningCycle({ silent = false } = {}) {
       const pool = candidates[i];
       await liveMessage?.note(`🔍 Recon ${i + 1}/${candidates.length}: ${pool.name}...`);
       const mint = pool.base?.mint;
-      const [smartWallets, narrative, tokenInfo] = await Promise.allSettled([
+      const [smartWallets, narrative, tokenInfo, gmgnSignals] = await Promise.allSettled([
         checkSmartWalletsOnPool({ pool_address: pool.pool }),
         mint ? getTokenNarrative({ mint }) : Promise.resolve(null),
         mint ? getTokenInfo({ query: mint }) : Promise.resolve(null),
+        mint ? checkGmgnSignals(mint) : Promise.resolve(null),
       ]);
       // Get best pair from batch result (highest volume SOL pair)
       const mintPairs = mint ? (dsBatch.get(mint) || []) : [];
@@ -572,6 +574,7 @@ export async function runScreeningCycle({ silent = false } = {}) {
         ti: tokenInfo.status === "fulfilled" ? tokenInfo.value?.results?.[0] : null,
         mem: recallForPool(pool.pool),
         ds: dsMetrics,
+        gmgn: gmgnSignals.status === "fulfilled" ? gmgnSignals.value : null,
       });
       await new Promise(r => setTimeout(r, 150)); // avoid 429s on Jupiter/OKX APIs
     }
@@ -668,7 +671,7 @@ export async function runScreeningCycle({ silent = false } = {}) {
     await liveMessage?.note(`🧠 Analyzing ${passing.length} candidates with LLM...`);
 
     // Build compact candidate blocks
-    const candidateBlocks = passing.map(({ pool, sw, n, ti, mem, ds }, i) => {
+    const candidateBlocks = passing.map(({ pool, sw, n, ti, mem, ds, gmgn }, i) => {
       const botPct = ti?.audit?.bot_holders_pct ?? "?";
       const top10Pct = ti?.audit?.top_holders_pct ?? "?";
       const feesSol = ti?.global_fees_sol ?? "?";
@@ -714,6 +717,9 @@ export async function runScreeningCycle({ silent = false } = {}) {
         ds ? `  dexscreener: buys_1h=${ds.ds_buys_1h}, sells_1h=${ds.ds_sells_1h}, buy_ratio=${ds.ds_buy_ratio_1h}, buy_pct=${ds.ds_buy_pct_1h}%` : null,
         ds ? `  ds_price: 5m=${ds.ds_price_change_5m ?? "?"}%, 1h=${ds.ds_price_change_1h ?? "?"}%, 6h=${ds.ds_price_change_6h ?? "?"}%, 24h=${ds.ds_price_change_24h ?? "?"}%` : null,
         ds?.ds_boosts_active ? `  ds_boosts: ${ds.ds_boosts_active} active` : null,
+        gmgn && (gmgn.smartMoneyBuys > 0 || gmgn.smartMoneySells > 0 || gmgn.kolBuys > 0 || gmgn.clusterSignal)
+          ? `  gmgn: sm_buys=${gmgn.smartMoneyBuys}, sm_sells=${gmgn.smartMoneySells}, kol_buys=${gmgn.kolBuys}${gmgn.clusterSignal ? `, cluster=${gmgn.clusterSignal.signalStrength}(${gmgn.clusterSignal.walletCount}w, $${gmgn.clusterSignal.totalUsd?.toFixed(0) || 0})` : ""}`
+          : null,
         n?.narrative ? `  narrative_untrusted: ${sanitizeUntrustedPromptText(n.narrative, 500)}` : `  narrative_untrusted: none`,
         mem ? `  memory_untrusted: ${sanitizeUntrustedPromptText(mem, 500)}` : null,
       ].filter(Boolean).join("\n");

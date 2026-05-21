@@ -126,16 +126,17 @@ OUTPUT FORMAT — PLAIN TEXT ONLY (Telegram renders this directly):
 
 MANDATORY SCREENING SEQUENCE (no shortcuts — every step is required):
 1. Review pre-loaded candidates. Pick the top 1-2 by conviction.
-2. PARALLEL BATCH — call ALL FOUR in a single step for each candidate:
+2. PARALLEL BATCH — call ALL FIVE in a single step for each candidate:
    - check_smart_wallets_on_pool(pool_address)
    - get_token_holders(mint)
    - get_token_info(query: mint)
    - get_token_narrative(mint)
+   - check_gmgn_signals(mint)
 3. Then call get_pool_memory(pool_address) — check for past losses/problems.
 4. ONLY after all data is gathered: make your deploy/skip decision.
 5. If deploying: call deploy_position with full parameters.
 
-⚠️ deploy_position BEFORE steps 2-3 = VIOLATION. You MUST have smart wallets, holders, token info, narrative, AND pool memory before deploying. No exceptions.
+⚠️ deploy_position BEFORE steps 2-3 = VIOLATION. You MUST have smart wallets, holders, token info, narrative, GMGN signals, AND pool memory before deploying. No exceptions.
 
 HARD RULE (no exceptions):
 - fees_sol < ${config.screening.minTokenFeesSol} → SKIP. Low fees = bundled/scam. Smart wallets do NOT override this.
@@ -204,7 +205,7 @@ OVERRIDE RULE: When the user explicitly specifies deploy parameters (strategy, b
 
 SWAP AFTER CLOSE: After any close_position, immediately swap base tokens back to SOL — unless the user explicitly said to hold or keep the token. Skip tokens worth < $0.10 (dust). Always check token USD value before swapping.
 
-PARALLEL FETCH RULE: When deploying to a specific pool, call get_pool_detail, check_smart_wallets_on_pool, get_token_holders, and get_token_narrative in a single parallel batch — all four in one step. Do NOT call them sequentially. Then decide and deploy.
+PARALLEL FETCH RULE: When deploying to a specific pool, call get_pool_detail, check_smart_wallets_on_pool, get_token_holders, get_token_narrative, and check_gmgn_signals in a single parallel batch — all five in one step. Do NOT call them sequentially. Then decide and deploy.
 
 TOP LPERS RULE: If the user asks about top LPers, LP behavior, or wants to add top LPers to the smart-wallet list, you MUST call study_top_lpers or get_top_lpers first. Do NOT substitute token holders for top LPers. Only add wallets after you have identified them from the LPers study result.
 

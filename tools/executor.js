@@ -20,6 +20,7 @@ import { addStrategy, listStrategies, getStrategy, setActiveStrategy, removeStra
 import { addToBlacklist, removeFromBlacklist, listBlacklist } from "../token-blacklist.js";
 import { blockDev, unblockDev, listBlockedDevs } from "../dev-blocklist.js";
 import { addSmartWallet, removeSmartWallet, listSmartWallets, checkSmartWalletsOnPool } from "../smart-wallets.js";
+import { checkGmgnSignals, checkGmgnExitSignal } from "./gmgn.js";
 import { getTokenInfo, getTokenHolders, getTokenNarrative } from "./token.js";
 import { config, reloadScreeningThresholds, MIN_SAFE_BINS_BELOW } from "../config.js";
 import { getRecentDecisions } from "../decision-log.js";
@@ -253,6 +254,8 @@ const toolMap = {
   remove_smart_wallet: removeSmartWallet,
   list_smart_wallets: listSmartWallets,
   check_smart_wallets_on_pool: checkSmartWalletsOnPool,
+  check_gmgn_signals: checkGmgnSignals,
+  check_gmgn_exit_signal: checkGmgnExitSignal,
   claim_fees: claimFees,
   close_position: closePosition,
   get_wallet_balance: getWalletBalances,
