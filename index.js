@@ -910,10 +910,14 @@ Summarize the current portfolio health, total fees earned, and performance of al
 
   // Lightweight 30s PnL poller — updates trailing TP state between management cycles, no LLM
   let _pnlPollBusy = false;
+  let _lastPnlPollAt = 0;
+  const PNL_POLL_MIN_INTERVAL_MS = 10_000; // min 10s between RPC calls
   const pnlPollInterval = setInterval(async () => {
     if (_managementBusy || _screeningBusy || _pnlPollBusy) return;
     if (getTrackedPositions(true).length === 0) return;
+    if (Date.now() - _lastPnlPollAt < PNL_POLL_MIN_INTERVAL_MS) return;
     _pnlPollBusy = true;
+    _lastPnlPollAt = Date.now();
     try {
       const result = await getMyPositions({ force: true, silent: true }).catch(() => null);
       if (!result?.positions?.length) return;
