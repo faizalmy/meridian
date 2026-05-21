@@ -23,6 +23,7 @@ strategy-library.json
 decision-log.json
 hivemind-cache.json
 signal-weights.json
+gmgn-cache.json
 
 # Logs
 logs/

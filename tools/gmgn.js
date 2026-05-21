@@ -194,7 +194,10 @@ export async function fetchSmartMoneyTrades(chain = "sol", limit = DEFAULT_LIMIT
     return _cache.smartMoneyTrades.trades;
   }
 
-  const result = await runGmgnCli(`track smartmoney --chain ${chain} --limit ${limit}`);
+  const raw = await runGmgnCli(`track smartmoney --chain ${chain} --limit ${limit}`);
+
+  // gmgn-cli returns { list: [...] } — extract the array
+  const result = raw?.list ?? (Array.isArray(raw) ? raw : null);
 
   if (result === null || !Array.isArray(result)) {
     // On error, return stale cache if available
@@ -216,7 +219,10 @@ export async function fetchKolTrades(chain = "sol", limit = DEFAULT_LIMIT) {
     return _cache.kolTrades.trades;
   }
 
-  const result = await runGmgnCli(`track kol --chain ${chain} --limit ${limit}`);
+  const raw = await runGmgnCli(`track kol --chain ${chain} --limit ${limit}`);
+
+  // gmgn-cli returns { list: [...] } — extract the array
+  const result = raw?.list ?? (Array.isArray(raw) ? raw : null);
 
   if (result === null || !Array.isArray(result)) {
     return _cache.kolTrades.trades || [];
