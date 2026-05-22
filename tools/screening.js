@@ -281,20 +281,11 @@ async function enrichDiscordSignalLaunchpads(rawPools) {
  * Without this, volume=0 kills every Discord signal in the filter.
  */
 async function enrichDiscordSignalPoolData(rawPools) {
-  // Enrich when any critical screening field is missing/zero — not just volume.
-  // The discovery_pool snapshot can have stale mcap=0, bin_step=wrong, organic_score=0.
-  const needsEnrichment = (pool) => {
-    if (!pool?.discord_signal || !pool?.pool_address) return false;
-    return (
-      numeric(pool?.volume) == null || numeric(pool?.volume) === 0 ||
-      numeric(pool?.tvl) == null || numeric(pool?.tvl) === 0 ||
-      numeric(pool?.base_token_holders) == null || numeric(pool?.base_token_holders) === 0 ||
-      numeric(pool?.token_x?.market_cap) == null || numeric(pool?.token_x?.market_cap) === 0 ||
-      numeric(pool?.token_x?.organic_score) == null || numeric(pool?.token_x?.organic_score) === 0 ||
-      numeric(pool?.dlmm_params?.bin_step) == null || numeric(pool?.dlmm_params?.bin_step) === 0
-    );
-  };
-  const missing = rawPools.filter(needsEnrichment);
+  // Discord signal pools are skeletons (only pool_address + name).
+  // Always fetch real data from Meteora — it's the source of truth.
+  const missing = rawPools.filter((pool) =>
+    pool?.discord_signal && pool?.pool_address
+  );
   if (missing.length === 0) return;
 
   const s = config.screening;
@@ -312,42 +303,31 @@ async function enrichDiscordSignalPoolData(rawPools) {
     if (!pool) continue;
     const d = result.value.data;
 
-    // Merge core metrics — overwrite 0/null with live data
-    if (d.volume != null && (numeric(pool.volume) == null || numeric(pool.volume) === 0)) {
-      pool.volume = d.volume;
-    }
-    if (d.tvl != null && (numeric(pool.tvl) == null || numeric(pool.tvl) === 0)) pool.tvl = d.tvl;
-    if (d.active_tvl != null && (numeric(pool.active_tvl) == null || numeric(pool.active_tvl) === 0)) {
-      pool.active_tvl = d.active_tvl;
-    }
-    if (d.fee != null && (numeric(pool.fee) == null || numeric(pool.fee) === 0)) pool.fee = d.fee;
-    if (d.fee_active_tvl_ratio != null && (numeric(pool.fee_active_tvl_ratio) == null || numeric(pool.fee_active_tvl_ratio) === 0)) {
-      pool.fee_active_tvl_ratio = d.fee_active_tvl_ratio;
-    }
-    if (d.volatility != null && (numeric(pool.volatility) == null || numeric(pool.volatility) === 0)) {
-      pool.volatility = d.volatility;
-    }
-    if (d.base_token_holders != null && (numeric(pool.base_token_holders) == null || numeric(pool.base_token_holders) === 0)) {
-      pool.base_token_holders = d.base_token_holders;
-    }
-    if (d.dlmm_params?.bin_step != null && (numeric(pool.dlmm_params?.bin_step) == null || numeric(pool.dlmm_params?.bin_step) === 0)) {
+    // Overwrite all fields from Meteora — it's the source of truth
+    if (d.volume != null) pool.volume = d.volume;
+    if (d.tvl != null) pool.tvl = d.tvl;
+    if (d.active_tvl != null) pool.active_tvl = d.active_tvl;
+    if (d.fee != null) pool.fee = d.fee;
+    if (d.fee_active_tvl_ratio != null) pool.fee_active_tvl_ratio = d.fee_active_tvl_ratio;
+    if (d.volatility != null) pool.volatility = d.volatility;
+    if (d.base_token_holders != null) pool.base_token_holders = d.base_token_holders;
+    if (d.dlmm_params?.bin_step != null) {
       pool.dlmm_params = pool.dlmm_params || {};
       pool.dlmm_params.bin_step = d.dlmm_params.bin_step;
     }
 
-    // Merge token data — overwrite 0/null with live data
+    // Merge token data from Meteora
     if (d.token_x) {
       pool.token_x = pool.token_x || {};
-      if (d.token_x.organic_score != null && (numeric(pool.token_x.organic_score) == null || numeric(pool.token_x.organic_score) === 0)) {
-        pool.token_x.organic_score = d.token_x.organic_score;
-      }
-      if (d.token_x.market_cap != null && (numeric(pool.token_x.market_cap) == null || numeric(pool.token_x.market_cap) === 0)) {
-        pool.token_x.market_cap = d.token_x.market_cap;
-      }
-      if (d.token_x.created_at != null && pool.token_x.created_at == null) {
-        pool.token_x.created_at = d.token_x.created_at;
-      }
-      if (d.token_x.symbol && !pool.token_x.symbol) pool.token_x.symbol = d.token_x.symbol;
+      if (d.token_x.organic_score != null) pool.token_x.organic_score = d.token_x.organic_score;
+      if (d.token_x.market_cap != null) pool.token_x.market_cap = d.token_x.market_cap;
+      if (d.token_x.created_at != null) pool.token_x.created_at = d.token_x.created_at;
+      if (d.token_x.symbol) pool.token_x.symbol = d.token_x.symbol;
+      if (d.token_x.address) pool.token_x.address = d.token_x.address;
+    }
+    if (d.token_y) {
+      pool.token_y = pool.token_y || {};
+      if (d.token_y.organic_score != null) pool.token_y.organic_score = d.token_y.organic_score;
     }
 
     // Use Meteora name if signal had none
@@ -465,12 +445,19 @@ export async function discoverPools({
       log("screening", `Discord signal fetch failed: ${error.message}`);
       return [];
     });
+    // Discord only provides the signal (token name/mint/pool_address).
+    // Meteora is the source of truth for pool data — do NOT use discovery_pool values.
     const signalPools = signalCandidates
       .map((candidate) => {
         const discoveryPool = candidate.discovery_pool;
         if (!discoveryPool?.pool_address) return null;
         return {
-          ...discoveryPool,
+          // Minimal skeleton — just enough to identify the pool for Meteora enrichment
+          pool_address: discoveryPool.pool_address,
+          name: discoveryPool.name || `${candidate.base_symbol}-SOL`,
+          pool_type: discoveryPool.pool_type || "dlmm",
+          token_x: discoveryPool.token_x ? { address: discoveryPool.token_x.address } : null,
+          // Discord signal metadata
           discord_signal: true,
           discord_signal_count: candidate.source_count || 1,
           discord_signal_seen_count: candidate.seen_count || 1,
@@ -486,6 +473,7 @@ export async function discoverPools({
       const byPool = new Map(rawPools.map((pool) => [pool.pool_address, pool]));
       for (const signalPool of signalPools) {
         if (byPool.has(signalPool.pool_address)) {
+          // Already in Meteora results — just add Discord signal flags
           byPool.set(signalPool.pool_address, {
             ...byPool.get(signalPool.pool_address),
             discord_signal: true,
@@ -495,6 +483,7 @@ export async function discoverPools({
             discord_signal_last_seen_at: signalPool.discord_signal_last_seen_at,
           });
         } else {
+          // Not in Meteora — add skeleton, enrichDiscordSignalPoolData will fetch real data
           byPool.set(signalPool.pool_address, signalPool);
         }
       }
