@@ -275,6 +275,80 @@ async function enrichDiscordSignalLaunchpads(rawPools) {
   }
 }
 
+/**
+ * Enrich Discord signal pools with live Meteora pool data.
+ * Discord signals are raw metadata — they have no volume/tvl/fee.
+ * Without this, volume=0 kills every Discord signal in the filter.
+ */
+async function enrichDiscordSignalPoolData(rawPools) {
+  const missing = rawPools.filter((pool) =>
+    pool?.discord_signal &&
+    pool?.pool_address &&
+    (numeric(pool?.volume) == null || numeric(pool?.volume) === 0)
+  );
+  if (missing.length === 0) return;
+
+  const s = config.screening;
+  const results = await Promise.allSettled(
+    missing.map((pool) =>
+      fetchPoolDiscoveryDetail({ poolAddress: pool.pool_address, timeframe: s.timeframe })
+        .then((data) => ({ poolAddress: pool.pool_address, data }))
+    )
+  );
+
+  let enriched = 0;
+  for (const result of results) {
+    if (result.status !== "fulfilled" || !result.value.data) continue;
+    const pool = rawPools.find((p) => p.pool_address === result.value.poolAddress);
+    if (!pool) continue;
+    const d = result.value.data;
+
+    // Merge core metrics — only fill if still missing/null
+    if (d.volume != null && (numeric(pool.volume) == null || numeric(pool.volume) === 0)) {
+      pool.volume = d.volume;
+    }
+    if (d.tvl != null && pool.tvl == null) pool.tvl = d.tvl;
+    if (d.active_tvl != null && pool.active_tvl == null) pool.active_tvl = d.active_tvl;
+    if (d.fee != null && pool.fee == null) pool.fee = d.fee;
+    if (d.fee_active_tvl_ratio != null && pool.fee_active_tvl_ratio == null) {
+      pool.fee_active_tvl_ratio = d.fee_active_tvl_ratio;
+    }
+    if (d.volatility != null && pool.volatility == null) pool.volatility = d.volatility;
+    if (d.base_token_holders != null && pool.base_token_holders == null) {
+      pool.base_token_holders = d.base_token_holders;
+    }
+    if (d.dlmm_params?.bin_step != null && pool.dlmm_params?.bin_step == null) {
+      pool.dlmm_params = pool.dlmm_params || {};
+      pool.dlmm_params.bin_step = d.dlmm_params.bin_step;
+    }
+
+    // Merge token data
+    if (d.token_x) {
+      pool.token_x = pool.token_x || {};
+      if (d.token_x.organic_score != null && pool.token_x.organic_score == null) {
+        pool.token_x.organic_score = d.token_x.organic_score;
+      }
+      if (d.token_x.market_cap != null && pool.token_x.market_cap == null) {
+        pool.token_x.market_cap = d.token_x.market_cap;
+      }
+      if (d.token_x.created_at != null && pool.token_x.created_at == null) {
+        pool.token_x.created_at = d.token_x.created_at;
+      }
+      if (d.token_x.symbol && !pool.token_x.symbol) pool.token_x.symbol = d.token_x.symbol;
+    }
+
+    // Use Meteora name if signal had none
+    if (!pool.name && d.name) pool.name = d.name;
+
+    enriched++;
+    log("screening", `Discord signal enriched from Meteora: ${pool.name || pool.pool_address} — volume=${d.volume} tvl=${d.tvl}`);
+  }
+
+  if (enriched > 0) {
+    log("screening", `Discord signal enrichment: ${enriched}/${missing.length} pools got live Meteora data`);
+  }
+}
+
 async function findRivalPool(mint) {
   const url = `https://dlmm.datapi.meteora.ag/pools?query=${encodeURIComponent(mint)}&sort_by=${encodeURIComponent("tvl:desc")}&filter_by=${encodeURIComponent(`tvl>${PVP_MIN_ACTIVE_TVL}`)}`;
   const res = await fetch(url);
@@ -417,6 +491,7 @@ export async function discoverPools({
 
   rawPools = await applyVolatilityTimeframe(rawPools, s.timeframe);
   await enrichDiscordSignalLaunchpads(rawPools);
+  await enrichDiscordSignalPoolData(rawPools);
 
   const filteredExamples = [];
   const thresholdedRawPools = rawPools.filter((pool) => {
