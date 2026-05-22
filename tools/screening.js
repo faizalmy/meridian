@@ -281,11 +281,20 @@ async function enrichDiscordSignalLaunchpads(rawPools) {
  * Without this, volume=0 kills every Discord signal in the filter.
  */
 async function enrichDiscordSignalPoolData(rawPools) {
-  const missing = rawPools.filter((pool) =>
-    pool?.discord_signal &&
-    pool?.pool_address &&
-    (numeric(pool?.volume) == null || numeric(pool?.volume) === 0)
-  );
+  // Enrich when any critical screening field is missing/zero — not just volume.
+  // The discovery_pool snapshot can have stale mcap=0, bin_step=wrong, organic_score=0.
+  const needsEnrichment = (pool) => {
+    if (!pool?.discord_signal || !pool?.pool_address) return false;
+    return (
+      numeric(pool?.volume) == null || numeric(pool?.volume) === 0 ||
+      numeric(pool?.tvl) == null || numeric(pool?.tvl) === 0 ||
+      numeric(pool?.base_token_holders) == null || numeric(pool?.base_token_holders) === 0 ||
+      numeric(pool?.token_x?.market_cap) == null || numeric(pool?.token_x?.market_cap) === 0 ||
+      numeric(pool?.token_x?.organic_score) == null || numeric(pool?.token_x?.organic_score) === 0 ||
+      numeric(pool?.dlmm_params?.bin_step) == null || numeric(pool?.dlmm_params?.bin_step) === 0
+    );
+  };
+  const missing = rawPools.filter(needsEnrichment);
   if (missing.length === 0) return;
 
   const s = config.screening;
@@ -303,32 +312,36 @@ async function enrichDiscordSignalPoolData(rawPools) {
     if (!pool) continue;
     const d = result.value.data;
 
-    // Merge core metrics — only fill if still missing/null
+    // Merge core metrics — overwrite 0/null with live data
     if (d.volume != null && (numeric(pool.volume) == null || numeric(pool.volume) === 0)) {
       pool.volume = d.volume;
     }
-    if (d.tvl != null && pool.tvl == null) pool.tvl = d.tvl;
-    if (d.active_tvl != null && pool.active_tvl == null) pool.active_tvl = d.active_tvl;
-    if (d.fee != null && pool.fee == null) pool.fee = d.fee;
-    if (d.fee_active_tvl_ratio != null && pool.fee_active_tvl_ratio == null) {
+    if (d.tvl != null && (numeric(pool.tvl) == null || numeric(pool.tvl) === 0)) pool.tvl = d.tvl;
+    if (d.active_tvl != null && (numeric(pool.active_tvl) == null || numeric(pool.active_tvl) === 0)) {
+      pool.active_tvl = d.active_tvl;
+    }
+    if (d.fee != null && (numeric(pool.fee) == null || numeric(pool.fee) === 0)) pool.fee = d.fee;
+    if (d.fee_active_tvl_ratio != null && (numeric(pool.fee_active_tvl_ratio) == null || numeric(pool.fee_active_tvl_ratio) === 0)) {
       pool.fee_active_tvl_ratio = d.fee_active_tvl_ratio;
     }
-    if (d.volatility != null && pool.volatility == null) pool.volatility = d.volatility;
-    if (d.base_token_holders != null && pool.base_token_holders == null) {
+    if (d.volatility != null && (numeric(pool.volatility) == null || numeric(pool.volatility) === 0)) {
+      pool.volatility = d.volatility;
+    }
+    if (d.base_token_holders != null && (numeric(pool.base_token_holders) == null || numeric(pool.base_token_holders) === 0)) {
       pool.base_token_holders = d.base_token_holders;
     }
-    if (d.dlmm_params?.bin_step != null && pool.dlmm_params?.bin_step == null) {
+    if (d.dlmm_params?.bin_step != null && (numeric(pool.dlmm_params?.bin_step) == null || numeric(pool.dlmm_params?.bin_step) === 0)) {
       pool.dlmm_params = pool.dlmm_params || {};
       pool.dlmm_params.bin_step = d.dlmm_params.bin_step;
     }
 
-    // Merge token data
+    // Merge token data — overwrite 0/null with live data
     if (d.token_x) {
       pool.token_x = pool.token_x || {};
-      if (d.token_x.organic_score != null && pool.token_x.organic_score == null) {
+      if (d.token_x.organic_score != null && (numeric(pool.token_x.organic_score) == null || numeric(pool.token_x.organic_score) === 0)) {
         pool.token_x.organic_score = d.token_x.organic_score;
       }
-      if (d.token_x.market_cap != null && pool.token_x.market_cap == null) {
+      if (d.token_x.market_cap != null && (numeric(pool.token_x.market_cap) == null || numeric(pool.token_x.market_cap) === 0)) {
         pool.token_x.market_cap = d.token_x.market_cap;
       }
       if (d.token_x.created_at != null && pool.token_x.created_at == null) {
@@ -341,7 +354,7 @@ async function enrichDiscordSignalPoolData(rawPools) {
     if (!pool.name && d.name) pool.name = d.name;
 
     enriched++;
-    log("screening", `Discord signal enriched from Meteora: ${pool.name || pool.pool_address} — volume=${d.volume} tvl=${d.tvl}`);
+    log("screening", `Discord signal enriched from Meteora: ${pool.name || pool.pool_address} — volume=${d.volume} tvl=${d.tvl} mcap=${d.token_x?.market_cap ?? "?"} bin=${d.dlmm_params?.bin_step ?? "?"}`);
   }
 
   if (enriched > 0) {
