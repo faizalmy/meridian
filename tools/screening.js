@@ -207,7 +207,7 @@ async function applyVolatilityTimeframe(rawPools, sourceTimeframe) {
   const volatilityByPool = new Map();
   for (const result of volatilityResults) {
     if (result.status !== "fulfilled") continue;
-    if (result.value.volatility == null) continue;
+    if (result.value.volatility == null || result.value.volatility <= 0) continue;
     volatilityByPool.set(result.value.poolAddress, result.value.volatility);
   }
 
@@ -309,7 +309,7 @@ async function enrichDiscordSignalPoolData(rawPools) {
     if (d.active_tvl != null) pool.active_tvl = d.active_tvl;
     if (d.fee != null) pool.fee = d.fee;
     if (d.fee_active_tvl_ratio != null) pool.fee_active_tvl_ratio = d.fee_active_tvl_ratio;
-    if (d.volatility != null) pool.volatility = d.volatility;
+    if (d.volatility != null && d.volatility > 0) pool.volatility = d.volatility;
     if (d.base_token_holders != null) pool.base_token_holders = d.base_token_holders;
     if (d.dlmm_params?.bin_step != null) {
       pool.dlmm_params = pool.dlmm_params || {};
@@ -824,7 +824,7 @@ function condensePool(p) {
     fee_window: round(p.fee),
     volume_window: round(p.volume),
     fee_active_tvl_ratio: p.fee_active_tvl_ratio != null ? fix(p.fee_active_tvl_ratio, 4) : null,
-    volatility: fix(p.volatility, 4),
+    volatility: p.volatility > 0 ? fix(p.volatility, 4) : null,
     volatility_timeframe: p.volatility_timeframe || getVolatilityTimeframe(config.screening.timeframe),
 
 
