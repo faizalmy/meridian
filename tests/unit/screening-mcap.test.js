@@ -2,6 +2,9 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 
 vi.mock("dotenv/config", () => ({}));
 
+const SOL_MINT = "So11111111111111111111111111111111111111112";
+const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+
 /**
  * Unit tests for tools/screening.js mcap handling.
  *
@@ -115,6 +118,76 @@ describe("getRawPoolScreeningRejectReason mcap filtering", () => {
 
   it("passes pool with valid mcap in range", () => {
     const pool = makePool(300_000); // between 100k-5M
+    const reason = getRawPoolScreeningRejectReason(pool, screeningConfig);
+    expect(reason).toBeNull();
+  });
+});
+
+// --- Test 3: Quote token filter (SOL-only pools) ---
+describe("getRawPoolScreeningRejectReason quote token filtering", () => {
+  const screeningConfig = {
+    minMcap: 100_000,
+    maxMcap: 5_000_000,
+    minHolders: 100,
+    minVolume: 1000,
+    minTvl: 5000,
+    maxTvl: null,
+    minBinStep: 80,
+    maxBinStep: 125,
+    minFeeActiveTvlRatio: 0.05,
+    minOrganic: 60,
+    minQuoteOrganic: 0,
+    minTokenAgeHours: null,
+    maxTokenAgeHours: null,
+    allowedLaunchpads: [],
+    blockedLaunchpads: [],
+    excludeHighSupplyConcentration: false,
+  };
+
+  const makePool = (quoteAddress, quoteSymbol = "SOL") => ({
+    name: `TEST-${quoteSymbol}`,
+    pool_address: "PoolAddr11111111111111111111111111111111",
+    token_x: { market_cap: 300_000, organic_score: 80 },
+    token_y: { address: quoteAddress, symbol: quoteSymbol, organic_score: 50 },
+    dlmm_params: { bin_step: 100 },
+    tvl: 10000,
+    fee_active_tvl_ratio: 0.1,
+    volume: 5000,
+    base_token_holders: 200,
+    volatility: 5,
+  });
+
+  let getRawPoolScreeningRejectReason;
+
+  beforeAll(async () => {
+    const mod = await import("../../tools/screening.js");
+    getRawPoolScreeningRejectReason = mod.getRawPoolScreeningRejectReason;
+  });
+
+  it("passes pool with SOL quote token", () => {
+    const pool = makePool(SOL_MINT, "SOL");
+    const reason = getRawPoolScreeningRejectReason(pool, screeningConfig);
+    expect(reason).toBeNull();
+  });
+
+  it("rejects pool with USDC quote token", () => {
+    const pool = makePool(USDC_MINT, "USDC");
+    const reason = getRawPoolScreeningRejectReason(pool, screeningConfig);
+    expect(reason).toContain("quote token");
+    expect(reason).toContain("USDC");
+    expect(reason).toContain("not SOL");
+  });
+
+  it("rejects pool with USDT quote token", () => {
+    const pool = makePool("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "USDT");
+    const reason = getRawPoolScreeningRejectReason(pool, screeningConfig);
+    expect(reason).toContain("quote token");
+    expect(reason).toContain("not SOL");
+  });
+
+  it("passes pool with no quote address (legacy data)", () => {
+    const pool = makePool(undefined, undefined);
+    pool.token_y = { organic_score: 50 }; // no address field
     const reason = getRawPoolScreeningRejectReason(pool, screeningConfig);
     expect(reason).toBeNull();
   });

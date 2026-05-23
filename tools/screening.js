@@ -94,6 +94,12 @@ export function getRawPoolScreeningRejectReason(pool, s) {
   const launchpad = getPoolLaunchpad(pool);
   const createdAt = numeric(base?.created_at);
 
+  // Reject non-SOL quote tokens — this agent only supports single-side SOL deploys
+  const SOL_MINT = config.tokens.SOL;
+  if (quote.address && quote.address !== SOL_MINT) {
+    return `quote token ${quote.symbol || quote.address} is not SOL — only SOL-paired pools are supported`;
+  }
+
   if (s.excludeHighSupplyConcentration && pool?.base_token_has_high_supply_concentration === true) {
     return "base token has high supply concentration";
   }
@@ -599,6 +605,11 @@ export async function getTopCandidates({ limit = 10 } = {}) {
       }
       if (!isUsableVolatility(p.volatility)) {
         pushFilteredReason(filteredOut, p, `volatility ${p.volatility ?? "unknown"} is unusable`);
+        return false;
+      }
+      // Reject non-SOL quote tokens — this agent only supports single-side SOL deploys
+      if (p.quote?.mint && p.quote.mint !== config.tokens.SOL) {
+        pushFilteredReason(filteredOut, p, `quote token ${p.quote.symbol || p.quote.mint} is not SOL`);
         return false;
       }
       if (occupiedPools.has(p.pool)) {
