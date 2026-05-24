@@ -138,16 +138,78 @@ function formatManagementReport(positions, actionMap, portfolio) {
     `\n\n${bold('Summary:')} 💼 ${positions.length} positions | ${cur}${portfolio.totalValue.toFixed(4)} | fees: ${cur}${portfolio.totalUnclaimed.toFixed(4)} | ${actionSummary}`;
 }
 
+// ─── Filter Summary ────────────────────────────────────────────
+
+function categorizeFilterReason(reason) {
+  const r = reason || '';
+  if (/^mcap .+ below minMcap/.test(r)) return 'mcap too low';
+  if (/^mcap .+ above maxMcap/.test(r)) return 'mcap too high';
+  if (/^holders .+ below minHolders/.test(r)) return 'holders too low';
+  if (/^volume .+ below minVolume/.test(r)) return 'volume too low';
+  if (/^TVL .+ below minTvl/.test(r)) return 'TVL too low';
+  if (/^TVL .+ above maxTvl/.test(r)) return 'TVL too high';
+  if (/^bin_step .+ below minBinStep/.test(r)) return 'bin step too low';
+  if (/^bin_step .+ above maxBinStep/.test(r)) return 'bin step too high';
+  if (/^fee\/active-TVL .+ below/.test(r)) return 'low fee/TVL ratio';
+  if (/^volatility .+ unusable/.test(r)) return 'unusable volatility';
+  if (/^base organic .+ below/.test(r)) return 'low organic score';
+  if (/^quote organic .+ below/.test(r)) return 'low quote organic';
+  if (/^quote token .+ is not SOL/.test(r)) return 'not SOL paired';
+  if (/blocked launchpad/.test(r)) return 'blocked launchpad';
+  if (/launchpad .+ not in allow-list/.test(r)) return 'launchpad not allowed';
+  if (/token age below/.test(r)) return 'token too new';
+  if (/token age above/.test(r)) return 'token too old';
+  if (/pool cooldown/.test(r)) return 'pool cooldown';
+  if (/token cooldown/.test(r)) return 'token cooldown';
+  if (/already have an open position/.test(r)) return 'existing position';
+  if (/already holding this base token/.test(r)) return 'duplicate token';
+  if (/PVP hard filter/.test(r)) return 'PVP filter';
+  if (/wash trading/.test(r)) return 'wash trading';
+  if (/blocked deployer/.test(r)) return 'blocked deployer';
+  if (/bot holders/.test(r)) return 'high bot holders';
+  if (/sell pressure/.test(r)) return 'high sell pressure';
+  if (/indicator reject/.test(r)) return 'indicator reject';
+  if (/\d+% of ATH/.test(r)) return 'near ATH';
+  if (/high supply concentration/.test(r)) return 'supply concentration';
+  if (/critical warnings/.test(r)) return 'critical warnings';
+  if (/high single ownership/.test(r)) return 'high ownership';
+  if (/pool_type .+ is not dlmm/.test(r)) return 'not DLMM pool';
+  return 'other';
+}
+
+function aggregateFilterReasons(examples) {
+  if (!examples || examples.length === 0) return [];
+  const counts = {};
+  for (const ex of examples) {
+    const cat = categorizeFilterReason(ex.reason);
+    counts[cat] = (counts[cat] || 0) + 1;
+  }
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([cat, count]) => `${cat}: ${count}`);
+}
+
+function formatFilterSummary(filteredExamples) {
+  if (!filteredExamples || filteredExamples.length === 0) return [];
+  const aggregated = aggregateFilterReasons(filteredExamples);
+  if (aggregated.length === 0) return [];
+  return [
+    '',
+    `${bold('🛡️ Filter Summary')} (${filteredExamples.length} rejected)`,
+    ...aggregated.map((line) => `• ${line}`),
+  ];
+}
+
 // ─── Screening Report ──────────────────────────────────────────
 
-function formatScreeningReport(candidates, decision, portfolio) {
+function formatScreeningReport(candidates, decision, portfolio, filteredExamples) {
   if (decision.action === 'skip') {
-    return formatScreeningSkip(candidates, decision, portfolio);
+    return formatScreeningSkip(candidates, decision, portfolio, filteredExamples);
   }
   return formatScreeningDeploy(candidates, decision, portfolio);
 }
 
-function formatScreeningDeploy(candidates, decision, portfolio) {
+function formatScreeningDeploy(candidates, decision, portfolio, filteredExamples) {
   const candidate = candidates.find(c => c.pool.name === decision.pair);
   if (!candidate) return `${bold('🔍 Screening')} — no data available`;
 
@@ -209,10 +271,12 @@ function formatScreeningDeploy(candidates, decision, portfolio) {
     `${pool.is_wash ? '❌' : '✅'} Wash: ${pool.is_wash ? 'YES' : 'NO'}`,
   );
 
+  lines.push(...formatFilterSummary(filteredExamples));
+
   return lines.join('\n');
 }
 
-function formatScreeningSkip(candidates, decision, portfolio) {
+function formatScreeningSkip(candidates, decision, portfolio, filteredExamples) {
   const lines = [
     `${bold('🔍 Screening Complete')}`,
     '',
@@ -227,6 +291,8 @@ function formatScreeningSkip(candidates, decision, portfolio) {
       lines.push(`- ${c.pool.name}: ${c.skipReason || 'failed filters'}`);
     });
   }
+
+  lines.push(...formatFilterSummary(filteredExamples));
 
   return lines.join('\n');
 }

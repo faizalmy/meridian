@@ -613,11 +613,13 @@ export async function runScreeningCycle({ silent = false } = {}) {
       return true;
     });
 
+    // Combine all filter rejections across screening layers for reporting
+    const allFilteredExamples = [...earlyFilteredExamples, ...filteredOut];
+
     await liveMessage?.note(`🛡️ ${passing.length}/${allCandidates.length} passed filters — fetching active bins...`);
 
     if (passing.length === 0) {
-      const combined = filteredOut.length > 0 ? filteredOut : earlyFilteredExamples;
-      const combinedExamples = combined.slice(0, 3)
+      const combinedExamples = allFilteredExamples
         .map((entry) => `- ${entry.name}: ${entry.reason}`)
         .join("\n");
       screenReport = combinedExamples
@@ -628,7 +630,7 @@ export async function runScreeningCycle({ silent = false } = {}) {
         actor: "SCREENER",
         summary: "No candidates available",
         reason: combinedExamples || "All candidates filtered before deploy",
-        rejected: combined.slice(0, 5).map((entry) => `${entry.name}: ${entry.reason}`),
+        rejected: allFilteredExamples.slice(0, 10).map((entry) => `${entry.name}: ${entry.reason}`),
       });
       return screenReport;
     }
@@ -819,7 +821,7 @@ Do NOT include:
       sol: currentBalance.sol,
       positionCount: prePositions.total_positions,
       maxPositions: config.risk.maxPositions,
-    });
+    }, allFilteredExamples);
     
     if (decision.action === 'skip') {
       // Set rejection cooldown on all presented candidates
