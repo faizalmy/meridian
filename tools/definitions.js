@@ -465,6 +465,45 @@ This is the preferred tool for answering "why did you..." questions because it r
   },
 
   // ═══════════════════════════════════════════
+  //  CYCLE SCREENER TOOL
+  // ═══════════════════════════════════════════
+  {
+    type: "function",
+    function: {
+      name: "screen_cycle_tokens",
+      description: `Screen tokens by smart money cycle phase using GMGN data.
+Fetches recent smart money trades, groups by token, queries SM holder counts,
+and classifies each token into a market cycle phase.
+
+Phases (best entry → worst):
+  accumulation       — SM buying heavily, few holders (early entry opportunity)
+  early_markup       — buying continues, high SM conviction
+  early_interest     — single-direction activity, building
+  consolidation      — balanced activity, stable
+  late_markup        — balanced but many SM holders (topping risk)
+  early_distribution — SM selling picking up
+  distribution       — SM exiting with many holders
+  markdown           — SM gone, selling dominant
+
+Use during screening cycles to find tokens where smart money is accumulating.
+Also use when the user asks "what is smart money buying?" or "find cycle tokens."`,
+      parameters: {
+        type: "object",
+        properties: {
+          top: {
+            type: "number",
+            description: "Number of top tokens to analyze. Default 10. Use 5 for quick scan, 15 for thorough."
+          },
+          min_usd: {
+            type: "number",
+            description: "Minimum USD per trade to include. Default 0. Use 100+ to filter small trades."
+          }
+        }
+      }
+    }
+  },
+
+  // ═══════════════════════════════════════════
   //  SMART WALLET TOOLS
   // ═══════════════════════════════════════════
   {

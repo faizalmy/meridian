@@ -464,3 +464,144 @@ export async function checkGmgnExitSignal(mint) {
     reason,
   };
 }
+
+// ── Cycle Token Screener ─────────────────────────────────────
+
+const SKIP_TOKENS = new Set([
+  "So11111111111111111111111111111111111111112",
+  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+  "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+]);
+const SKIP_SYMBOLS = new Set(["SOL", "WSOL", "USDC", "USDT"]);
+
+function classifyCyclePhase({ buyCount, sellCount, ratio, smHolderCount, buyUsd, sellUsd }) {
+  const buyDom = ratio >= 2.0;
+  const sellDom = ratio <= 0.5;
+  const balanced = ratio > 0.5 && ratio < 2.0;
+  const highConviction = smHolderCount >= 5;
+  const lowConviction = smHolderCount <= 2;
+
+  if (buyDom && (lowConviction || balanced) && buyUsd > sellUsd * 3) return "accumulation";
+  if (buyDom && highConviction) return "early_markup";
+  if (balanced && highConviction) return "late_markup";
+  if (sellDom && highConviction) return "distribution";
+  if (sellDom && smHolderCount >= 3) return "early_distribution";
+  if (sellDom && lowConviction) return "markdown";
+  if (balanced && (buyCount + sellCount) >= 5) return "consolidation";
+  return "early_interest";
+}
+
+/**
+ * Screen tokens by smart money cycle phase.
+ * Fetches recent smart money trades, groups by token, queries SM holder counts,
+ * and classifies each into a market cycle phase.
+ *
+ * @param {Object} opts
+ * @param {number} opts.top - Number of top tokens to analyze (default 10)
+ * @param {number} opts.minUsd - Min USD per trade to include (default 0)
+ * @returns {Object} { tokens: [...], summary: { phase counts } }
+ */
+export async function screenCycleTokens({ top = 10, minUsd = 0 } = {}) {
+  // Step 1: Fetch smart money trades
+  const raw = await runGmgnCli("track smartmoney --chain sol --limit 200");
+  const trades = raw?.list ?? (Array.isArray(raw) ? raw : []);
+
+  if (!trades.length) {
+    return { tokens: [], summary: {}, error: "No smart money trades returned" };
+  }
+
+  // Step 2: Group by token
+  const byToken = {};
+
+  for (const t of trades) {
+    const mint = t.base_address;
+    if (!mint || SKIP_TOKENS.has(mint)) continue;
+
+    const symbol = t.base_token?.symbol || mint.slice(0, 6);
+    if (SKIP_SYMBOLS.has(symbol?.toUpperCase())) continue;
+
+    const usd = parseFloat(t.amount_usd || "0");
+    if (usd < minUsd) continue;
+
+    if (!byToken[mint]) {
+      byToken[mint] = {
+        symbol,
+        buys: 0, sells: 0,
+        buyUsd: 0, sellUsd: 0,
+        buyWallets: new Set(),
+        sellWallets: new Set(),
+        newPositions: 0, closedPositions: 0,
+      };
+    }
+
+    const g = byToken[mint];
+    const isBuy = t.side === "buy";
+
+    if (isBuy) {
+      g.buys++;
+      g.buyUsd += usd;
+      g.buyWallets.add(t.maker);
+      if (t.is_open_or_close === 0) g.newPositions++;
+    } else {
+      g.sells++;
+      g.sellUsd += usd;
+      g.sellWallets.add(t.maker);
+      if (t.is_open_or_close === 1) g.closedPositions++;
+    }
+  }
+
+  // Step 3: Rank and take top N
+  const candidates = Object.entries(byToken)
+    .map(([mint, g]) => {
+      const ratio = g.sells > 0 ? g.buys / g.sells : g.buys > 0 ? 99 : 0;
+      const allWallets = new Set([...g.buyWallets, ...g.sellWallets]);
+      return {
+        mint, symbol: g.symbol,
+        buyCount: g.buys, sellCount: g.sells,
+        buyUsd: +g.buyUsd.toFixed(2), sellUsd: +g.sellUsd.toFixed(2),
+        ratio: ratio >= 99 ? 999 : +ratio.toFixed(2),
+        buyWallets: g.buyWallets.size, sellWallets: g.sellWallets.size,
+        totalWallets: allWallets.size,
+        newPositions: g.newPositions, closedPositions: g.closedPositions,
+        smHolderCount: 0, phase: "unknown",
+      };
+    })
+    .sort((a, b) => b.totalWallets - a.totalWallets || b.buyUsd - a.buyUsd)
+    .slice(0, top);
+
+  if (!candidates.length) {
+    return { tokens: [], summary: {} };
+  }
+
+  // Step 4: Query SM holder count for each (rate-limited)
+  for (let i = 0; i < candidates.length; i++) {
+    const c = candidates[i];
+    const holdersData = await runGmgnCli(
+      `token holders --chain sol --address ${c.mint} --tag smart_degen --limit 20`
+    );
+    c.smHolderCount = (holdersData?.list ?? []).length;
+    c.phase = classifyCyclePhase(c);
+
+    // Rate limit pause (weight=5, capacity=20 → ~1.5s between calls)
+    if (i < candidates.length - 1) {
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
+
+  // Step 5: Sort by phase score (best entry first)
+  const phaseScore = {
+    accumulation: 5, early_markup: 4, early_interest: 3,
+    consolidation: 2, late_markup: 1,
+    early_distribution: -1, distribution: -2, markdown: -3,
+    unknown: 0,
+  };
+  candidates.sort((a, b) => (phaseScore[b.phase] || 0) - (phaseScore[a.phase] || 0));
+
+  // Summary
+  const summary = {};
+  for (const t of candidates) {
+    summary[t.phase] = (summary[t.phase] || 0) + 1;
+  }
+
+  return { tokens: candidates, summary };
+}
