@@ -579,9 +579,9 @@ export async function runScreeningCycle({ silent = false } = {}) {
       await new Promise(r => setTimeout(r, 150)); // avoid 429s on Jupiter/OKX APIs
     }
 
-    // Hard filters after token recon — block launchpads and excessive Jupiter bot holders
+    // Hard filters after token recon — block launchpads, bot holders, and quality risks
     const filteredOut = [];
-    const passing = allCandidates.filter(({ pool, ti, ds }) => {
+    const passing = allCandidates.filter(({ pool, ti, ds, sw, n }) => {
       const launchpad = ti?.launchpad ?? null;
       if (launchpad && config.screening.allowedLaunchpads?.length > 0 && !config.screening.allowedLaunchpads.includes(launchpad)) {
         log("screening", `Skipping ${pool.name} — launchpad ${launchpad} not in allow-list`);
@@ -600,6 +600,14 @@ export async function runScreeningCycle({ silent = false } = {}) {
         filteredOut.push({ name: pool.name, reason: `bot holders ${botPct}% > ${maxBotHoldersPct}%` });
         return false;
       }
+      // Top10 holder concentration filter
+      const top10Pct = Number(ti?.audit?.top_holders_pct);
+      const maxTop10Pct = config.screening.maxTop10Pct;
+      if (Number.isFinite(top10Pct) && maxTop10Pct != null && top10Pct > maxTop10Pct) {
+        log("screening", `Top10 filter: dropped ${pool.name} — concentration ${top10Pct}% > ${maxTop10Pct}%`);
+        filteredOut.push({ name: pool.name, reason: `top10 concentration ${top10Pct}% above maximum ${maxTop10Pct}%` });
+        return false;
+      }
       // DexScreener sell-pressure filter — reject if sells dominate 1h txns
       const maxSellPct = config.screening.maxSellPct;
       if (ds && maxSellPct != null && ds.ds_buy_pct_1h != null) {
@@ -609,6 +617,33 @@ export async function runScreeningCycle({ silent = false } = {}) {
           filteredOut.push({ name: pool.name, reason: `sell pressure ${sellPct.toFixed(0)}% > ${maxSellPct}% (1h txns)` });
           return false;
         }
+      }
+      // Token fees filter — reject pools with insufficient global fees (bundled/scam signal)
+      const globalFeesSol = Number(ti?.global_fees_sol);
+      if (Number.isFinite(globalFeesSol) && globalFeesSol < config.screening.minTokenFeesSol) {
+        log("screening", `Fees filter: dropped ${pool.name} — fees ${globalFeesSol} SOL < ${config.screening.minTokenFeesSol} SOL`);
+        filteredOut.push({ name: pool.name, reason: `token fees ${globalFeesSol} SOL below minimum ${config.screening.minTokenFeesSol} SOL` });
+        return false;
+      }
+      // Rugpull + no smart wallets — rugpull alone is flagged but not filtered; needs smart wallet absence to reject
+      const smartWalletCount = Math.max(sw?.in_pool?.length ?? 0, Number(pool.gmgn_smart_wallets ?? 0) || 0);
+      if (pool.is_rugpull && smartWalletCount === 0) {
+        log("screening", `Rugpull filter: dropped ${pool.name} — rugpull risk with no smart wallets`);
+        filteredOut.push({ name: pool.name, reason: "rugpull risk with no smart wallets" });
+        return false;
+      }
+      // PVP + no smart wallets — PVP alone is flagged but not filtered; needs smart wallet absence to reject
+      if (pool.is_pvp && smartWalletCount === 0) {
+        log("screening", `PVP filter: dropped ${pool.name} — PVP conflict with no smart wallets`);
+        filteredOut.push({ name: pool.name, reason: "PVP conflict with no smart wallets" });
+        return false;
+      }
+      // No narrative + no smart wallets — weak candidate with no quality signals
+      const hasNarrative = !!n?.narrative;
+      if (!hasNarrative && smartWalletCount === 0) {
+        log("screening", `Weak candidate: dropped ${pool.name} — no narrative and no smart wallets`);
+        filteredOut.push({ name: pool.name, reason: "no narrative and no smart wallets" });
+        return false;
       }
       return true;
     });
@@ -633,36 +668,6 @@ export async function runScreeningCycle({ silent = false } = {}) {
         rejected: allFilteredExamples.slice(0, 10).map((entry) => `${entry.name}: ${entry.reason}`),
       });
       return screenReport;
-    }
-
-    if (passing.length === 1) {
-      const skipReason = getLoneCandidateSkipReason(passing[0]);
-      if (skipReason) {
-        const candidateName = passing[0].pool?.name || "unknown";
-        screenReport = [
-          "⛔ NO DEPLOY",
-          "",
-          "Cycle finished with no valid entry.",
-          "",
-          "BEST LOOKING CANDIDATE",
-          candidateName,
-          "",
-          "WHY SKIPPED",
-          `Only one candidate survived filtering, but it was not worth deploying: ${skipReason}.`,
-          "",
-          "REJECTED",
-          `- ${candidateName}: ${skipReason}`,
-        ].join("\n");
-        appendDecision({
-          type: "no_deploy",
-          actor: "SCREENER",
-          summary: "Single candidate skipped",
-          reason: skipReason,
-          pool: passing[0].pool?.pool,
-          pool_name: candidateName,
-        });
-        return screenReport;
-      }
     }
 
     // Pre-fetch active_bin for all passing candidates in parallel
@@ -1482,7 +1487,23 @@ async function deployLatestCandidate(index) {
       n: narrative.status === "fulfilled" ? narrative.value : null,
       ti: tokenInfo.status === "fulfilled" ? tokenInfo.value?.results?.[0] : null,
     };
-    const skipReason = getLoneCandidateSkipReason(context);
+    // Quality gates — same checks as screening Layer 3 post-recon filters
+    const ti = context.ti || {};
+    const sw = context.sw;
+    const n = context.n;
+    const smartWalletCount = Math.max(sw?.in_pool?.length ?? 0, Number(candidate.gmgn_smart_wallets ?? 0) || 0);
+    const globalFeesSol = Number(ti.global_fees_sol);
+    const top10Pct = Number(ti.audit?.top_holders_pct);
+    const botPct = Number(ti.audit?.bot_holders_pct);
+    const hasNarrative = !!n?.narrative;
+    let skipReason = null;
+    if (candidate.is_wash) skipReason = "wash trading was flagged";
+    else if (Number.isFinite(globalFeesSol) && globalFeesSol < config.screening.minTokenFeesSol) skipReason = `token fees ${globalFeesSol} SOL below minimum ${config.screening.minTokenFeesSol} SOL`;
+    else if (Number.isFinite(top10Pct) && top10Pct > config.screening.maxTop10Pct) skipReason = `top10 concentration ${top10Pct}% above maximum ${config.screening.maxTop10Pct}%`;
+    else if (Number.isFinite(botPct) && botPct > config.screening.maxBotHoldersPct) skipReason = `bot holders ${botPct}% above maximum ${config.screening.maxBotHoldersPct}%`;
+    else if (candidate.is_rugpull && smartWalletCount === 0) skipReason = "rugpull risk with no smart wallets";
+    else if (candidate.is_pvp && smartWalletCount === 0) skipReason = "PVP conflict with no smart wallets";
+    else if (!hasNarrative && smartWalletCount === 0) skipReason = "no narrative and no smart wallets";
     if (skipReason) {
       appendDecision({
         type: "no_deploy",
@@ -1830,30 +1851,6 @@ async function telegramHandler(msg) {
 function fmtPct(value) {
   const n = Number(value);
   return Number.isFinite(n) ? `${n.toFixed(2)}%` : "?";
-}
-
-function getLoneCandidateSkipReason({ pool, sw, n, ti } = {}) {
-  if (!pool) return "missing candidate data";
-  const smartWalletCount = Math.max(sw?.in_pool?.length ?? 0, Number(pool.gmgn_smart_wallets ?? 0) || 0);
-  const tokenInfo = ti || {};
-  const hasNarrative = !!n?.narrative;
-  const globalFeesSol = Number(tokenInfo.global_fees_sol ?? pool.gmgn_total_fee_sol);
-  const top10Pct = Number(tokenInfo.audit?.top_holders_pct ?? pool.gmgn_token_info_top10_pct ?? pool.gmgn_top10_holder_pct);
-  const botPct = Number(tokenInfo.audit?.bot_holders_pct ?? pool.gmgn_bot_degen_pct);
-  if (pool.is_wash) return "wash trading was flagged";
-  if (pool.is_rugpull && smartWalletCount === 0) return "rugpull risk was flagged and no smart wallets offset it";
-  if (pool.is_pvp && smartWalletCount === 0) return "PVP symbol conflict and no smart-wallet confirmation";
-  if (Number.isFinite(globalFeesSol) && globalFeesSol < config.screening.minTokenFeesSol) {
-    return `token fees ${globalFeesSol} SOL below minimum ${config.screening.minTokenFeesSol} SOL`;
-  }
-  if (Number.isFinite(top10Pct) && top10Pct > config.screening.maxTop10Pct) {
-    return `top10 concentration ${top10Pct}% above maximum ${config.screening.maxTop10Pct}%`;
-  }
-  if (Number.isFinite(botPct) && botPct > config.screening.maxBotHoldersPct) {
-    return `bot holders ${botPct}% above maximum ${config.screening.maxBotHoldersPct}%`;
-  }
-  if (!hasNarrative && smartWalletCount === 0) return "only candidate has no narrative and no smart-wallet confirmation";
-  return null;
 }
 
 function computeBinsBelow(volatility) {

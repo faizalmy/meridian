@@ -168,6 +168,11 @@ function categorizeFilterReason(reason) {
   if (/blocked deployer/.test(r)) return 'blocked deployer';
   if (/bot holders/.test(r)) return 'high bot holders';
   if (/sell pressure/.test(r)) return 'high sell pressure';
+  if (/token fees .+ below minimum/.test(r)) return 'low token fees';
+  if (/rugpull risk/.test(r)) return 'rugpull risk';
+  if (/PVP conflict/.test(r)) return 'PVP conflict';
+  if (/top10 concentration/.test(r)) return 'high top10 concentration';
+  if (/no narrative and no smart wallets/.test(r)) return 'weak candidate';
   if (/indicator reject/.test(r)) return 'indicator reject';
   if (/\d+% of ATH/.test(r)) return 'near ATH';
   if (/high supply concentration/.test(r)) return 'supply concentration';
