@@ -74,6 +74,8 @@ export const config = {
     maxMcap:           u.maxMcap           ?? 10_000_000,
     minBinStep:        u.minBinStep        ?? 80,
     maxBinStep:        u.maxBinStep        ?? 125,
+    minVolatility:     u.minVolatility     ?? 0,       // reject pools with volatility below this
+    maxVolatility:     u.maxVolatility     ?? null,     // reject pools with volatility above this (null = no cap)
     timeframe:         u.timeframe         ?? "5m",
     category:          u.category          ?? "trending",
     minTokenFeesSol:   u.minTokenFeesSol   ?? 30,  // global fees paid (priority+jito tips). below = bundled/scam
@@ -270,6 +272,8 @@ export function reloadScreeningThresholds() {
     if (fresh.minVolume      != null) s.minVolume      = fresh.minVolume;
     if (fresh.minBinStep     != null) s.minBinStep     = fresh.minBinStep;
     if (fresh.maxBinStep     != null) s.maxBinStep     = fresh.maxBinStep;
+    if (fresh.minVolatility  != null) s.minVolatility  = fresh.minVolatility;
+    if (fresh.maxVolatility  !== undefined) s.maxVolatility = fresh.maxVolatility;
     if (fresh.timeframe         != null) s.timeframe         = fresh.timeframe;
     if (fresh.category          != null) s.category          = fresh.category;
     if (fresh.minTokenAgeHours  !== undefined) s.minTokenAgeHours = fresh.minTokenAgeHours;

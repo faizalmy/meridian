@@ -123,6 +123,12 @@ export function getRawPoolScreeningRejectReason(pool, s) {
   if (!isUsableVolatility(volatility)) {
     return `volatility ${volatility ?? "unknown"} is unusable`;
   }
+  if (s.minVolatility != null && s.minVolatility > 0 && volatility < s.minVolatility) {
+    return `volatility ${volatility} below minVolatility ${s.minVolatility}`;
+  }
+  if (s.maxVolatility != null && volatility > s.maxVolatility) {
+    return `volatility ${volatility} above maxVolatility ${s.maxVolatility}`;
+  }
   if (baseOrganic == null || baseOrganic < s.minOrganic) {
     return `base organic ${baseOrganic ?? "unknown"} below minOrganic ${s.minOrganic}`;
   }
@@ -589,6 +595,16 @@ export async function getTopCandidates({ limit = 10 } = {}) {
       }
       if (!isUsableVolatility(p.volatility)) {
         pushFilteredReason(filteredOut, p, `volatility ${p.volatility ?? "unknown"} is unusable`);
+        return false;
+      }
+      const minVol = Number(config.screening.minVolatility ?? 0);
+      const maxVol = config.screening.maxVolatility == null ? null : Number(config.screening.maxVolatility);
+      if (Number.isFinite(minVol) && minVol > 0 && Number.isFinite(p.volatility) && p.volatility < minVol) {
+        pushFilteredReason(filteredOut, p, `volatility ${p.volatility} below minVolatility ${minVol}`);
+        return false;
+      }
+      if (Number.isFinite(maxVol) && Number.isFinite(p.volatility) && p.volatility > maxVol) {
+        pushFilteredReason(filteredOut, p, `volatility ${p.volatility} above maxVolatility ${maxVol}`);
         return false;
       }
       // Reject non-SOL quote tokens — this agent only supports single-side SOL deploys

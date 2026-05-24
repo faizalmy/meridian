@@ -491,6 +491,16 @@ export async function deployPosition({
     log("deploy", `Base mint ${baseMint.slice(0, 8)} is on cooldown — skipping deploy for pool ${pool_address.slice(0, 8)}`);
     return { success: false, error: "Token on cooldown — recently closed out-of-range too many times. Try a different token." };
   }
+
+  // ─── Pre-deploy fee/TVL backstop ─────────────────────────────
+  // Hard-block deploys when fee/TVL is below the management yield floor.
+  // This prevents the LLM from deploying into dead pools even if screening slipped.
+  const minFeePerTvl = Number(config.management.minFeePerTvl24h ?? 0);
+  const entryFeeTvl = fee_tvl_ratio != null ? Number(fee_tvl_ratio) : null;
+  if (Number.isFinite(minFeePerTvl) && minFeePerTvl > 0 && entryFeeTvl != null && Number.isFinite(entryFeeTvl) && entryFeeTvl < minFeePerTvl) {
+    log("deploy", `BLOCKED — fee/TVL ${entryFeeTvl.toFixed(4)} below management floor ${minFeePerTvl}. Pool: ${pool_address.slice(0, 8)}`);
+    return { success: false, blocked: true, error: `Pre-deploy backstop: fee/TVL ${entryFeeTvl.toFixed(4)}% below management threshold ${minFeePerTvl}%. Refusing deploy.` };
+  }
   const activeBin = await pool.getActiveBin();
   const actualBinStep = pool.lbPair.binStep;
   const activePrice = Number(getPriceOfBinByBinId(activeBin.binId, actualBinStep).toString());
