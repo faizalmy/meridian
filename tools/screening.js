@@ -385,6 +385,19 @@ async function refreshDiscordOnlyPools(pools, timeframe) {
       const val = numeric(fresh[field]);
       if (val != null) pool[field] = val;
     }
+    // Meteora is source of truth — merge token data, params, and holders
+    if (fresh.token_x && typeof fresh.token_x === "object") {
+      pool.token_x = { ...pool.token_x, ...fresh.token_x };
+    }
+    if (fresh.token_y && typeof fresh.token_y === "object") {
+      pool.token_y = { ...pool.token_y, ...fresh.token_y };
+    }
+    if (fresh.dlmm_params && typeof fresh.dlmm_params === "object") {
+      pool.dlmm_params = { ...pool.dlmm_params, ...fresh.dlmm_params };
+    }
+    if (fresh.base_token_holders != null) {
+      pool.base_token_holders = numeric(fresh.base_token_holders);
+    }
     log("screening", `Discord signal refreshed live data: ${pool.name || pool.pool_address} — vol=${pool.volume?.toFixed(0)} fee=${pool.fee?.toFixed(2)}`);
   }
 }
