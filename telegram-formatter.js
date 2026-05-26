@@ -249,7 +249,7 @@ function formatScreeningDeploy(candidates, decision, portfolio, filteredExamples
   if (ds) {
     const buyPct = ds.ds_buy_pct_1h != null ? `${ds.ds_buy_pct_1h.toFixed(0)}%` : '?';
     const ratio = ds.ds_buy_ratio_1h != null ? ds.ds_buy_ratio_1h.toFixed(2) : '?';
-    const buyTag = ds.ds_buy_pct_1h > 55 ? '🟢' : ds.ds_buy_pct_1h < 45 ? '🔴' : '🟡';
+    const buyTag = ds.ds_buy_pct_1h != null ? (ds.ds_buy_pct_1h > 55 ? '🟢' : ds.ds_buy_pct_1h < 45 ? '🔴' : '🟡') : '⚪';
     const parts = [];
     if (ds.ds_buys_1h != null) parts.push(`${ds.ds_buys_1h} buys`);
     if (ds.ds_sells_1h != null) parts.push(`${ds.ds_sells_1h} sells`);
