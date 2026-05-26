@@ -1288,8 +1288,8 @@ function renderSettingsMenu(page = "main") {
     rows = [
       [toggleButton("useDiscordSignals", "Discord signals"), toggleButton("blockPvpSymbols", "PVP hard block")],
       [
-        settingButton(`Strategy: spot`, "cfg:set:strategy:spot"),
         settingButton(`Strategy: bid_ask`, "cfg:set:strategy:bid_ask"),
+        settingButton(`Strategy: spot`, "cfg:set:strategy:spot"),
       ],
       stepButtons("minBinsBelow", "Min bins", 1, { digits: 0 }),
       stepButtons("maxBinsBelow", "Max bins", 1, { digits: 0 }),

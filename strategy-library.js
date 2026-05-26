@@ -105,7 +105,7 @@ function ensureDefaultStrategies() {
     }
   }
   if (added) {
-    if (!db.active) db.active = "custom_ratio_spot";
+    if (!db.active) db.active = "single_sided_reseed";
     save(db);
     log("strategy", "Preloaded default strategies");
   }

@@ -665,7 +665,7 @@ switch (subcommand) {
       pool_address: flags.pool,
       amount_x: flags["amount-x"] ? parseFloat(flags["amount-x"]) : 0,
       amount_y: flags["amount-y"] ? parseFloat(flags["amount-y"]) : 0,
-      strategy: flags.strategy || "spot",
+      strategy: flags.strategy || "bid_ask",
       single_sided_x: argv.includes("--single-sided-x"),
     }));
     break;
