@@ -28,7 +28,7 @@ echo "Syncing data from $REMOTE_HOST:$REMOTE_PATH to $LOCAL_PATH"
 synced=0
 failed=0
 for f in "${FILES[@]}"; do
-  if scp -q "$REMOTE_HOST:$REMOTE_PATH/$f" "$LOCAL_PATH/$f" 2>/dev/null; then
+  if rsync -az --timeout=15 "$REMOTE_HOST:$REMOTE_PATH/$f" "$LOCAL_PATH/$f" 2>/dev/null; then
     echo "✓ $f"
     synced=$((synced + 1))
   else
