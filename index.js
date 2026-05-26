@@ -7,7 +7,7 @@ import { agentLoop } from "./agent.js";
 import { log } from "./logger.js";
 import { getMyPositions, closePosition, getActiveBin } from "./tools/dlmm.js";
 import { getWalletBalances } from "./tools/wallet.js";
-import { getTopCandidates } from "./tools/screening.js";
+import { getTopCandidates, rankCandidates, pickBestCandidate, computeDeployArgs } from "./tools/screening.js";
 import { config, reloadScreeningThresholds, computeDeployAmount } from "./config.js";
 import { evolveThresholds, getPerformanceSummary } from "./lessons.js";
 import { executeTool, registerCronRestarter } from "./tools/executor.js";
@@ -674,8 +674,75 @@ export async function runScreeningCycle({ silent = false } = {}) {
     const activeBinResults = await Promise.allSettled(
       passing.map(({ pool }) => getActiveBin({ pool_address: pool.pool }))
     );
+    if (config.screening.deterministicScreening) {
+      // Deterministic path — no LLM needed
+      const { executeTool } = await import('./tools/executor.js');
 
-    await liveMessage?.note(`🧠 Analyzing ${passing.length} candidates with LLM...`);
+      // Build enriched candidates (same shape as allCandidates)
+      const enrichedCandidates = passing.map(({ pool, sw, n, ti, mem, ds, gmgn }, i) => ({
+        pool, sw, n, ti, mem, ds, gmgn,
+        active_bin: activeBinResults[i]?.status === 'fulfilled' ? activeBinResults[i].value?.binId : null,
+      }));
+
+      // Rank and pick
+      const ranked = rankCandidates(enrichedCandidates);
+      const best = pickBestCandidate(ranked, config.screening.minDeployScore);
+
+      if (!best) {
+        // No candidate above threshold — skip
+        log('screening', `Deterministic: no candidate above minDeployScore (${config.screening.minDeployScore}). Top score: ${ranked[0]?.rank_score ?? 0}`);
+        screenReport = `No candidates above quality threshold. Top score: ${ranked[0]?.rank_score ?? 0}/${config.screening.minDeployScore}.`;
+        appendDecision({ type: 'no_deploy', actor: 'SCREENER', summary: 'Deterministic: below threshold', reason: screenReport, rejected: ranked.slice(0, 5).map(r => `${r.pool.name} (score=${r.rank_score})`) });
+        // Set cooldown on all passing candidates
+        const cooldownMinutes = config.management.screeningRejectionCooldownMinutes ?? 30;
+        for (const { pool } of passing) { if (pool?.pool) recordScreeningRejection(pool.pool, pool.base?.mint || null, 'Below deploy threshold', cooldownMinutes); }
+        _screeningBusy = false;
+        return screenReport;
+      }
+
+      // Deploy
+      const activeBin = best.candidate.active_bin;
+      if (activeBin == null) {
+        log('screening', `Deterministic: no active_bin for ${best.candidate.pool.name} — skipping`);
+        screenReport = `Skip: no active_bin for ${best.candidate.pool.name}.`;
+        _screeningBusy = false;
+        return screenReport;
+      }
+
+      const deployArgs = computeDeployArgs(best.candidate, deployAmount, activeBin, config);
+      log('screening', `Deterministic deploy: ${best.candidate.pool.name} score=${best.score}`);
+      await liveMessage?.note(`🚀 Deploying ${best.candidate.pool.name} (score: ${best.score})...`);
+
+      const result = await executeTool('deploy_position', deployArgs);
+      const deployOk = result && result.success !== false && !result.error && !result.blocked;
+
+      // Build decision object
+      const decision = {
+        action: deployOk ? 'deploy' : 'skip',
+        pair: best.candidate.pool.name,
+        summary: deployOk
+          ? `Deterministic deploy: score=${best.score}, fee_tvl=${best.breakdown.fee_tvl}, smart_wallets=${best.breakdown.smart_wallets}`
+          : `Deploy blocked: ${result?.error || result?.message || 'unknown'}`,
+        confidence: best.score >= 80 ? 'very_high' : best.score >= 65 ? 'high' : best.score >= 55 ? 'medium' : 'low',
+        rank_score: best.score,
+        rank_breakdown: best.breakdown,
+      };
+
+      screenReport = formatScreeningReport(passing, decision, { sol: currentBalance.sol, positionCount: prePositions.total_positions, maxPositions: config.risk.maxPositions }, allFilteredExamples);
+
+      appendDecision({
+        type: deployOk ? 'deploy' : 'no_deploy',
+        actor: 'SCREENER',
+        summary: `Deterministic: ${decision.pair} (score=${best.score})`,
+        reason: decision.summary,
+      });
+
+      _screeningBusy = false;
+      return screenReport;
+    }
+
+    // LLM path (non-deterministic)
+    await liveMessage?.note(`🧠 Analyzing ${passing.length} candidates...`);
 
     // Build compact candidate blocks
     const candidateBlocks = passing.map(({ pool, sw, n, ti, mem, ds, gmgn }, i) => {

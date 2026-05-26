@@ -92,6 +92,8 @@ export const config = {
     maxTokenAgeHours:   u.maxTokenAgeHours   ?? null, // null = no maximum
     athFilterPct:       u.athFilterPct       ?? null, // e.g. -20 = only deploy if price is >= 20% below ATH
     maxSellPct:         u.maxSellPct         ?? null, // DexScreener: reject if sells > X% of 1h txns. null = no filter
+    deterministicScreening: u.deterministicScreening ?? false,
+    minDeployScore: u.minDeployScore ?? 55,
   },
 
   // ─── Position Management ────────────────
@@ -286,6 +288,8 @@ export function reloadScreeningThresholds() {
     if (fresh.maxBotHoldersPct  != null) s.maxBotHoldersPct = fresh.maxBotHoldersPct;
     if (fresh.allowedLaunchpads !== undefined) s.allowedLaunchpads = fresh.allowedLaunchpads;
     if (fresh.blockedLaunchpads !== undefined) s.blockedLaunchpads = fresh.blockedLaunchpads;
+    if (fresh.deterministicScreening !== undefined) s.deterministicScreening = fresh.deterministicScreening;
+    if (fresh.minDeployScore != null) s.minDeployScore = fresh.minDeployScore;
     const minBinsBelow = numericConfig(fresh.minBinsBelow) ?? config.strategy.minBinsBelow;
     const maxBinsBelow = numericConfig(fresh.maxBinsBelow) ?? numericConfig(fresh.binsBelow) ?? config.strategy.maxBinsBelow;
     const defaultBinsBelow = numericConfig(fresh.defaultBinsBelow) ?? numericConfig(fresh.binsBelow) ?? config.strategy.defaultBinsBelow ?? maxBinsBelow;

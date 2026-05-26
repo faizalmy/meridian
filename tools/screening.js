@@ -26,6 +26,16 @@ const PVP_MIN_ACTIVE_TVL = 5_000;
 const PVP_MIN_HOLDERS = 500;
 const PVP_MIN_GLOBAL_FEES_SOL = 30;
 
+const DEFAULT_RANK_WEIGHTS = {
+  feeTvl: 0.25,
+  smartWallets: 0.20,
+  narrative: 0.15,
+  organic: 0.10,
+  volume: 0.10,
+  risk: 0.10,
+  momentum: 0.10,
+};
+
 function normalizeSymbol(symbol) {
   return String(symbol || "").trim().toUpperCase();
 }
@@ -36,6 +46,130 @@ function scoreCandidate(pool) {
   const volume = Number(pool.volume_window || 0);
   const holders = Number(pool.holders || 0);
   return feeTvl * 1000 + organic * 10 + volume / 100 + holders / 100;
+}
+
+export function computeRankScore(candidate) {
+  const pool = candidate.pool || {};
+  const sw = candidate.sw || {};
+  const n = candidate.n || {};
+  const ds = candidate.ds || {};
+
+  // 1. fee_tvl (25%): normalize 0-10% → 0-100, cap at 100
+  const feeRatio = Number(pool.fee_active_tvl_ratio || 0);
+  const fee_tvl = Math.min(100, (feeRatio / 10) * 100);
+
+  // 2. smart_wallets (20%)
+  const inPool = Array.isArray(sw.in_pool) ? sw.in_pool : [];
+  let smart_wallets = 0;
+  if (inPool.length === 1) smart_wallets = 60;
+  else if (inPool.length >= 2) smart_wallets = 80;
+  // KOL detection: smart wallet objects have { name, category, address }
+  // category='kol' or name matching known KOL patterns
+  if (inPool.some((s) => s.category === "kol" || s.category === "KOL")) smart_wallets += 20;
+  smart_wallets = Math.min(100, smart_wallets);
+
+  // 3. narrative (15%): present=70 (trending match requires external data not available here)
+  let narrative = 0;
+  const narrativeText = n.narrative || "";
+  if (narrativeText) {
+    narrative = 70;
+  }
+  narrative = Math.min(100, narrative);
+
+  // 4. organic (10%): linear 0-100 → 0-100
+  const organic = Math.min(100, Math.max(0, Number(pool.organic_score || 0)));
+
+  // 5. volume (10%): log scale
+  const vol = Number(pool.volume_window || 0);
+  const volume = Math.min(100, Math.log10(Math.max(1, vol)) * 20);
+
+  // 6. risk (10%): LOW=80, MEDIUM=50, HIGH=20, rugpull/wash=0
+  let risk = 50;
+  const rl = String(pool.risk_level || "").toUpperCase();
+  if (rl === "LOW") risk = 80;
+  else if (rl === "MEDIUM") risk = 50;
+  else if (rl === "HIGH") risk = 20;
+  if (pool.is_rugpull) risk = 0;
+  if (pool.is_wash) risk = 0;
+
+  // 7. momentum (10%): ds_price_change_1h
+  const change = Number(ds.ds_price_change_1h || 0);
+  let momentum;
+  if (change >= 0) {
+    momentum = 50 + Math.min(change * 10, 50);
+  } else {
+    momentum = Math.max(0, 50 + change * 10);
+  }
+
+  const w = DEFAULT_RANK_WEIGHTS;
+  const weighted =
+    fee_tvl * w.feeTvl +
+    smart_wallets * w.smartWallets +
+    narrative * w.narrative +
+    organic * w.organic +
+    volume * w.volume +
+    risk * w.risk +
+    momentum * w.momentum;
+
+  const score = Math.round(weighted * 100) / 100;
+  return {
+    score,
+    breakdown: { fee_tvl, smart_wallets, narrative, organic, volume, risk, momentum },
+  };
+}
+
+export function rankCandidates(candidates) {
+  if (!Array.isArray(candidates) || candidates.length === 0) return [];
+  return candidates
+    .map((c) => {
+      const { score, breakdown } = computeRankScore(c);
+      return { ...c, rank_score: score, rank_breakdown: breakdown };
+    })
+    .sort((a, b) => b.rank_score - a.rank_score);
+}
+
+export function pickBestCandidate(ranked, minScore = 55) {
+  if (!Array.isArray(ranked) || ranked.length === 0) return null;
+  const top = ranked[0];
+  if (top.rank_score < minScore) return null;
+  return {
+    candidate: top,
+    score: top.rank_score,
+    breakdown: top.rank_breakdown,
+  };
+}
+
+export function computeDeployArgs(candidate, deployAmount, activeBin, config) {
+  const pool = candidate.pool || {};
+  const volatility = Number(pool.volatility) || 0.01;
+  const strategy = config?.strategy || {};
+  const minBelow = Number(strategy.minBinsBelow) || 10;
+  const maxBelow = Number(strategy.maxBinsBelow) || 50;
+
+  // bins_below: clamp(round(minBinsBelow + (vol/5) * (max-min)), min, max)
+  const rawBinsBelow = minBelow + (volatility / 5) * (maxBelow - minBelow);
+  const binsBelow = Math.min(maxBelow, Math.max(minBelow, Math.round(rawBinsBelow)));
+
+  // Build reason string with score and top signals (use cached rank_score, don't re-score)
+  const score = candidate.rank_score ?? 0;
+  const breakdown = candidate.rank_breakdown ?? {};
+  const signals = Object.entries(breakdown)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([k, v]) => `${k}:${Math.round(v)}`)
+    .join(", ");
+
+  return {
+    bins_below: binsBelow,
+    volatility,
+    amount_y: deployAmount,
+    amount_x: 0,
+    bins_above: 0,
+    active_bin: activeBin,
+    pool_address: pool.pool || "",
+    pool_name: pool.name || "",
+    reason: `score=${Math.round(score)} top_signals=[${signals}]`,
+  };
 }
 
 function numeric(value) {
