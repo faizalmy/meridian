@@ -1011,6 +1011,17 @@ Summarize the current portfolio health, total fees earned, and performance of al
             }
             continue;
           }
+          // Fast path: close critical exits immediately (bypass cooldown)
+          if (exit.action === "STOP_LOSS" || (exit.action === "TRAILING_TP" && !exit.needs_confirmation)) {
+            try {
+              log("state", `[PnL poll] FAST CLOSE: ${p.pair} — ${exit.reason}`);
+              await closePosition({ position_address: p.position, reason: `[PnL poll] ${exit.reason}` });
+              log("state", `[PnL poll] Fast-closed ${p.pair} — ${exit.reason}`);
+            } catch (e) {
+              log("cron_error", `[PnL poll] Fast close failed for ${p.pair}: ${e.message}`);
+            }
+            break;
+          }
           const cooldownMs = config.schedule.managementIntervalMin * 60 * 1000;
           const sinceLastTrigger = Date.now() - _pollTriggeredAt;
           if (sinceLastTrigger >= cooldownMs) {
