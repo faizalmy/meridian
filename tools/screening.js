@@ -263,6 +263,9 @@ export function getRawPoolScreeningRejectReason(pool, s) {
   if (s.maxVolatility != null && volatility > s.maxVolatility) {
     return `volatility ${volatility} above maxVolatility ${s.maxVolatility}`;
   }
+  if (s.maxVolatility != null && s.maxVolatilityProximityPct != null && volatility >= s.maxVolatility * s.maxVolatilityProximityPct) {
+    return `volatility ${volatility} near maxVolatility ${s.maxVolatility} (>= ${s.maxVolatilityProximityPct * 100}% cap — Stake-SOL rug risk)`;
+  }
   if (baseOrganic == null || baseOrganic < s.minOrganic) {
     return `base organic ${baseOrganic ?? "unknown"} below minOrganic ${s.minOrganic}`;
   }
@@ -752,6 +755,11 @@ export async function getTopCandidates({ limit = 10 } = {}) {
       }
       if (Number.isFinite(maxVol) && Number.isFinite(p.volatility) && p.volatility > maxVol) {
         pushFilteredReason(filteredOut, p, `volatility ${p.volatility} above maxVolatility ${maxVol}`);
+        return false;
+      }
+      const maxVolProximity = config.screening.maxVolatilityProximityPct == null ? null : Number(config.screening.maxVolatilityProximityPct);
+      if (Number.isFinite(maxVol) && Number.isFinite(maxVolProximity) && Number.isFinite(p.volatility) && p.volatility >= maxVol * maxVolProximity) {
+        pushFilteredReason(filteredOut, p, `volatility ${p.volatility} near maxVolatility ${maxVol} (>= ${maxVolProximity * 100}% cap — Stake-SOL rug risk)`);
         return false;
       }
       // Reject non-SOL quote tokens — this agent only supports single-side SOL deploys

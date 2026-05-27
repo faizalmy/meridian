@@ -76,6 +76,7 @@ export const config = {
     maxBinStep:        u.maxBinStep        ?? 125,
     minVolatility:     u.minVolatility     ?? 0,       // reject pools with volatility below this
     maxVolatility:     u.maxVolatility     ?? null,     // reject pools with volatility above this (null = no cap)
+    maxVolatilityProximityPct: u.maxVolatilityProximityPct ?? 0.8, // reject pools with volatility >= maxVol * this (0.8 = 80% of cap). Prevents Stake-SOL style near-cap crashes.
     timeframe:         u.timeframe         ?? "5m",
     category:          u.category          ?? "trending",
     minTokenFeesSol:   u.minTokenFeesSol   ?? 30,  // global fees paid (priority+jito tips). below = bundled/scam
@@ -277,6 +278,7 @@ export function reloadScreeningThresholds() {
     if (fresh.maxBinStep     != null) s.maxBinStep     = fresh.maxBinStep;
     if (fresh.minVolatility  != null) s.minVolatility  = fresh.minVolatility;
     if (fresh.maxVolatility  !== undefined) s.maxVolatility = fresh.maxVolatility;
+    if (fresh.maxVolatilityProximityPct != null) s.maxVolatilityProximityPct = fresh.maxVolatilityProximityPct;
     if (fresh.timeframe         != null) s.timeframe         = fresh.timeframe;
     if (fresh.category          != null) s.category          = fresh.category;
     if (fresh.minTokenAgeHours  !== undefined) s.minTokenAgeHours = fresh.minTokenAgeHours;
