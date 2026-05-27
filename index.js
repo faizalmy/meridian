@@ -1035,6 +1035,17 @@ Summarize the current portfolio health, total fees earned, and performance of al
         }
         const closeRule = getDeterministicCloseRule(p, config.management);
         if (closeRule) {
+          // Fast path: close critical deterministic rules immediately (bypass cooldown)
+          if (closeRule.rule <= 4 || closeRule.rule === 6) {
+            try {
+              log("state", `[PnL poll] FAST CLOSE (Rule ${closeRule.rule}): ${p.pair} — ${closeRule.reason}`);
+              await closePosition({ position_address: p.position, reason: `[PnL poll] Rule ${closeRule.rule}: ${closeRule.reason}` });
+              log("state", `[PnL poll] Fast-closed ${p.pair} (Rule ${closeRule.rule})`);
+            } catch (e) {
+              log("cron_error", `[PnL poll] Fast close failed for ${p.pair}: ${e.message}`);
+            }
+            break;
+          }
           const cooldownMs = config.schedule.managementIntervalMin * 60 * 1000;
           const sinceLastTrigger = Date.now() - _pollTriggeredAt;
           if (sinceLastTrigger >= cooldownMs) {
