@@ -420,6 +420,23 @@ describe("formatScreeningReport", () => {
     expect(msg).toContain("Wash: NO");
   });
 
+  it("shows narrative in deploy message when available", () => {
+    const candidates = [makeCandidate("BONK-SOL", { n: { narrative: "DePIN infrastructure token powering real IoT adoption", mint: "abc" } })];
+    const decision = { action: "deploy", pair: "BONK-SOL", confidence: "high", summary: "test" };
+    const msg = formatScreeningReport(candidates, decision, defaultPortfolio);
+
+    expect(msg).toContain("<b>📖 Narrative</b>");
+    expect(msg).toContain("DePIN infrastructure token");
+  });
+
+  it("omits narrative section when not available", () => {
+    const candidates = [makeCandidate("BONK-SOL", { n: null })];
+    const decision = { action: "deploy", pair: "BONK-SOL", confidence: "high", summary: "test" };
+    const msg = formatScreeningReport(candidates, decision, defaultPortfolio);
+
+    expect(msg).not.toContain("<b>📖 Narrative</b>");
+  });
+
   it("formats skip decision", () => {
     const candidates = [
       makeCandidate("SCAM-SOL", { skipReason: "failed rugpull filter" }),

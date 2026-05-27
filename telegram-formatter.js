@@ -218,7 +218,7 @@ function formatScreeningDeploy(candidates, decision, portfolio, filteredExamples
   const candidate = candidates.find(c => c.pool.name === decision.pair);
   if (!candidate) return `${bold('🔍 Screening')} — no data available`;
 
-  const { pool, sw, ti, ds } = candidate;
+  const { pool, sw, ti, ds, n } = candidate;
 
   const confidenceLevels = {
     very_high: { label: 'VERY HIGH', emoji: '🟢🟢' },
@@ -275,6 +275,16 @@ function formatScreeningDeploy(candidates, decision, portfolio, filteredExamples
     `${pool.is_rugpull ? '❌' : '✅'} Rugpull: ${pool.is_rugpull ? 'YES' : 'NO'}`,
     `${pool.is_wash ? '❌' : '✅'} Wash: ${pool.is_wash ? 'YES' : 'NO'}`,
   );
+
+  // Narrative — show raw text from Jupiter ChainInsight if available
+  const narrativeText = n?.narrative;
+  if (narrativeText) {
+    lines.push(
+      '',
+      `${bold('📖 Narrative')}`,
+      escapeHtml(narrativeText),
+    );
+  }
 
   lines.push(...formatFilterSummary(filteredExamples));
 
