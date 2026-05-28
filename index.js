@@ -717,12 +717,14 @@ export async function runScreeningCycle({ silent = false } = {}) {
       const deployOk = result && result.success !== false && !result.error && !result.blocked;
 
       // Build decision object
+      const skipReason = result?.error || result?.message || result?.reason || 'unknown';
       const decision = {
         action: deployOk ? 'deploy' : 'skip',
         pair: best.candidate.pool.name,
         summary: deployOk
           ? `Deterministic deploy: score=${best.score}, fee_tvl=${best.breakdown.fee_tvl}, smart_wallets=${best.breakdown.smart_wallets}`
-          : `Deploy blocked: ${result?.error || result?.message || 'unknown'}`,
+          : `Deploy blocked: ${skipReason}`,
+        reason: deployOk ? undefined : `Deploy blocked: ${skipReason}`,
         confidence: best.score >= 80 ? 'very_high' : best.score >= 65 ? 'high' : best.score >= 55 ? 'medium' : 'low',
         rank_score: best.score,
         rank_breakdown: best.breakdown,
