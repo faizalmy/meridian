@@ -823,7 +823,9 @@ async function runSafetyChecks(name, args) {
         };
       }
 
-      const minDeploy = Math.max(0.1, config.management.deployAmountSol);
+      // Account for bearish regime reduction when computing minimum deploy
+      const bearishFactor = config.marketRegime?.enabled ? (config.marketRegime?.reducePositionSizePct ?? 1) : 1;
+      const minDeploy = Math.max(0.1, config.management.deployAmountSol * bearishFactor);
       if (amountY < minDeploy) {
         return {
           pass: false,
