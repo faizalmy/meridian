@@ -825,7 +825,7 @@ async function runSafetyChecks(name, args) {
 
       // Account for bearish regime reduction when computing minimum deploy
       const bearishFactor = config.marketRegime?.enabled ? (config.marketRegime?.reducePositionSizePct ?? 1) : 1;
-      const minDeploy = Math.max(0.1, config.management.deployAmountSol * bearishFactor);
+      const minDeploy = Math.max(config.risk.minDeployAmount, config.management.deployAmountSol * bearishFactor);
       if (amountY < minDeploy) {
         return {
           pass: false,

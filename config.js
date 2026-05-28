@@ -57,6 +57,7 @@ export const config = {
   // ─── Risk Limits ─────────────────────────
   risk: {
     maxPositions:    u.maxPositions    ?? 3,
+    minDeployAmount: u.minDeployAmount ?? 0.1,
     maxDeployAmount: u.maxDeployAmount ?? 50,
   },
 

@@ -83,6 +83,7 @@ Sets defined in `agent.js:6-7`. If you add a tool, also add it to the relevant s
 | blockedLaunchpads | screening | [] |
 | deployAmountSol | management | 0.5 |
 | maxDeployAmount | risk | 50 |
+| minDeployAmount | risk | 0.1 |
 | maxPositions | risk | 3 |
 | gasReserve | management | 0.2 |
 | positionSizePct | management | 0.35 |
