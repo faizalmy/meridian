@@ -108,17 +108,37 @@ export async function getWalletBalances() {
       total_usd: Math.round((data.totalUsdValue || 0) * 100) / 100,
     };
   } catch (error) {
-    log("wallet_error", error.message);
-    return {
-      wallet: walletAddress,
-      sol: 0,
-      sol_price: 0,
-      sol_usd: 0,
-      usdc: 0,
-      tokens: [],
-      total_usd: 0,
-      error: error.message,
-    };
+    log("wallet_error", `${error.message} — falling back to RPC getBalance`);
+    // Fallback: use Solana RPC getBalance when Helius Wallet API fails (429, timeout, etc.)
+    try {
+      const connection = getConnection();
+      const pubkey = new PublicKey(walletAddress);
+      const lamports = await connection.getBalance(pubkey);
+      const sol = Math.round((lamports / LAMPORTS_PER_SOL) * 1e6) / 1e6;
+      log("wallet", `RPC fallback balance: ${sol} SOL`);
+      return {
+        wallet: walletAddress,
+        sol,
+        sol_price: 0,
+        sol_usd: 0,
+        usdc: 0,
+        tokens: [],
+        total_usd: 0,
+        error: `Helius failed (${error.message}), used RPC fallback`,
+      };
+    } catch (rpcError) {
+      log("wallet_error", `RPC fallback also failed: ${rpcError.message}`);
+      return {
+        wallet: walletAddress,
+        sol: 0,
+        sol_price: 0,
+        sol_usd: 0,
+        usdc: 0,
+        tokens: [],
+        total_usd: 0,
+        error: error.message,
+      };
+    }
   }
 }
 
