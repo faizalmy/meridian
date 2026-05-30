@@ -108,12 +108,13 @@ export async function getWalletBalances() {
       total_usd: Math.round((data.totalUsdValue || 0) * 100) / 100,
     };
   } catch (error) {
-    log("wallet_error", `${error.message} — falling back to RPC getBalance`);
-    // Fallback: use Solana RPC getBalance when Helius Wallet API fails (429, timeout, etc.)
+    log("wallet_error", `${error.message} — falling back to public Solana RPC getBalance`);
+    // Fallback: use public Solana RPC when Helius is rate-limited (429).
+    // Must use a DIFFERENT endpoint — Helius Wallet API and Helius RPC share the same rate limit quota.
     try {
-      const connection = getConnection();
+      const fallbackConnection = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
       const pubkey = new PublicKey(walletAddress);
-      const lamports = await connection.getBalance(pubkey);
+      const lamports = await fallbackConnection.getBalance(pubkey);
       const sol = Math.round((lamports / LAMPORTS_PER_SOL) * 1e6) / 1e6;
       log("wallet", `RPC fallback balance: ${sol} SOL`);
       return {
